@@ -79,7 +79,6 @@ export default function Sidebar() {
     });
   }
 
-  // tags from ALL docs (including trashed) per user requirement
   const allTags = Array.from(new Set(docs.flatMap((d) => d.tags ?? [])));
 
   // ── Derived lists ──────────────────────────────────────────────────────────
@@ -234,23 +233,38 @@ export default function Sidebar() {
     e.target.value = '';
   }
 
-  // ── Doc row (reused for folder groups and unfiled) ─────────────────────────
+  // ── Doc row ───────────────────────────────────────────────────────────────
   function renderDocRow(doc: Doc) {
+    const isActive = activeId === doc.id;
     return (
       <li
         key={doc.id}
-        className={`border-b border-gray-100 dark:border-gray-700 ${activeId === doc.id ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+        className="border-l-2 border-b"
+        style={{
+          borderBottomColor: 'var(--border)',
+          borderLeftColor: isActive ? 'var(--active-bar)' : 'transparent',
+          backgroundColor: isActive ? 'var(--bg-active)' : undefined,
+        }}
       >
         {confirmId === doc.id ? (
-          <div className="px-3 py-2.5">
-            <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+          <div className="px-3 py-2">
+            <p className="text-[12px] mb-1.5" style={{ color: 'var(--text-2)' }}>
               Move &ldquo;{doc.title || 'Untitled'}&rdquo; to trash?
             </p>
-            <div className="flex gap-2">
-              <button onClick={() => handleDelete(doc.id)} className="flex-1 text-xs font-medium bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700 transition-colors">
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => handleDelete(doc.id)}
+                className="flex-1 text-[12px] font-medium bg-red-600 text-white rounded-[4px] px-2 py-1 hover:bg-red-700 transition-colors"
+              >
                 Move to trash
               </button>
-              <button onClick={() => setConfirmId(null)} className="flex-1 text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+              <button
+                onClick={() => setConfirmId(null)}
+                className="flex-1 text-[12px] rounded-[4px] border px-2 py-1 transition-colors"
+                style={{ color: 'var(--text-2)', borderColor: 'var(--border)' }}
+                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
+              >
                 Cancel
               </button>
             </div>
@@ -261,25 +275,45 @@ export default function Sidebar() {
             draggable
             onDragStart={(e) => { e.dataTransfer.setData('docId', doc.id); setConfirmId(null); }}
             onDragEnd={() => setDragOverTarget(null)}
+            onMouseOver={(e) => {
+              if (!isActive) (e.currentTarget.parentElement as HTMLElement).style.backgroundColor = 'var(--bg-hover)';
+            }}
+            onMouseOut={(e) => {
+              if (!isActive) (e.currentTarget.parentElement as HTMLElement).style.backgroundColor = '';
+            }}
           >
             <button
               onClick={() => handleStar(doc.id)}
               aria-label={doc.starred ? 'Unstar' : 'Star'}
-              className={`pl-2 pr-1 pt-2.5 text-base leading-none transition-colors flex-shrink-0 ${
-                doc.starred ? 'text-amber-400' : 'text-gray-200 dark:text-gray-700 opacity-0 group-hover:opacity-100 hover:text-amber-300'
+              className={`pl-2.5 pr-1 py-[7px] text-[13px] leading-none transition-colors flex-shrink-0 ${
+                doc.starred ? 'text-amber-400' : 'opacity-0 group-hover:opacity-100 hover:text-amber-300'
               }`}
+              style={doc.starred ? {} : { color: 'var(--border)' }}
             >
               ★
             </button>
-            <Link href={`/docs/${doc.id}`} className="flex flex-col flex-1 px-1 py-2 min-w-0">
-              <span className={`text-sm text-gray-900 dark:text-gray-100 truncate ${activeId === doc.id ? 'font-medium' : ''}`}>
+            <Link href={`/docs/${doc.id}`} className="flex flex-col flex-1 px-1 py-[7px] min-w-0">
+              <span
+                className={`text-[13px] truncate leading-tight ${isActive ? 'font-medium' : ''}`}
+                style={{ color: 'var(--text-1)' }}
+              >
                 {doc.title || 'Untitled'}
               </span>
-              <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{timeAgo(doc.updatedAt)}</span>
+              <span className="font-mono text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                {timeAgo(doc.updatedAt)}
+              </span>
               {doc.tags && doc.tags.length > 0 && (
                 <div className="flex flex-wrap gap-0.5 mt-1">
                   {doc.tags.map((tag) => (
-                    <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 rounded-full">
+                    <span
+                      key={tag}
+                      className="text-[10px] px-1.5 py-px rounded-[4px] border font-mono"
+                      style={{
+                        backgroundColor: 'var(--tag-bg)',
+                        color: 'var(--tag-text)',
+                        borderColor: 'var(--tag-border)',
+                      }}
+                    >
                       {tag}
                     </span>
                   ))}
@@ -289,7 +323,8 @@ export default function Sidebar() {
             <button
               onClick={() => setConfirmId(doc.id)}
               aria-label="Delete document"
-              className="mr-2 mt-2.5 p-1 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-all flex-shrink-0"
+              className="mr-2.5 mt-[6px] p-1 rounded-[4px] opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all flex-shrink-0 text-[11px]"
+              style={{ color: 'var(--text-3)' }}
             >
               ✕
             </button>
@@ -300,30 +335,59 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 flex flex-col h-full bg-gray-50 dark:bg-gray-900">
+    <aside
+      className="w-64 flex-shrink-0 border-r flex flex-col h-full"
+      style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}
+    >
 
       {/* Folder delete confirmation modal */}
       {folderDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/40 dark:bg-black/60 z-40 flex items-center justify-center p-4" onClick={() => setFolderDeleteConfirm(null)}>
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl p-5 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
-            <p className="font-medium text-gray-900 dark:text-gray-100 mb-1">
+        <div
+          className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4"
+          onClick={() => setFolderDeleteConfirm(null)}
+        >
+          <div
+            className="rounded-[8px] border p-5 max-w-xs w-full"
+            style={{
+              backgroundColor: 'var(--bg-modal)',
+              borderColor: 'var(--border)',
+              boxShadow: 'var(--shadow-modal)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="font-semibold text-[14px] mb-1" style={{ color: 'var(--text-1)' }}>
               Delete &ldquo;{folderDeleteConfirm.name}&rdquo;?
             </p>
             {folderDeleteConfirm.docCount > 0 && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              <p className="text-[13px] mb-4" style={{ color: 'var(--text-2)' }}>
                 This folder contains {folderDeleteConfirm.docCount} document{folderDeleteConfirm.docCount !== 1 ? 's' : ''}. What should happen to them?
               </p>
             )}
             <div className="flex flex-col gap-2 mt-3">
-              <button onClick={handleDeleteFolderWithDocs} className="text-sm px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors text-left">
+              <button
+                onClick={handleDeleteFolderWithDocs}
+                className="text-[13px] px-3 py-2 rounded-[4px] bg-red-600 text-white hover:bg-red-700 transition-colors text-left"
+              >
                 Delete folder {folderDeleteConfirm.docCount > 0 ? 'and documents' : ''}
               </button>
               {folderDeleteConfirm.docCount > 0 && (
-                <button onClick={handleDeleteFolderKeepDocs} className="text-sm px-3 py-2 rounded border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left">
+                <button
+                  onClick={handleDeleteFolderKeepDocs}
+                  className="text-[13px] px-3 py-2 rounded-[4px] border text-left transition-colors"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-1)' }}
+                  onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                  onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
+                >
                   Delete folder, move documents to unfiled
                 </button>
               )}
-              <button onClick={() => setFolderDeleteConfirm(null)} className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-center pt-1">
+              <button
+                onClick={() => setFolderDeleteConfirm(null)}
+                className="text-[13px] text-center pt-1 transition-colors"
+                style={{ color: 'var(--text-2)' }}
+                onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-1)')}
+                onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-2)')}
+              >
                 Cancel
               </button>
             </div>
@@ -331,11 +395,12 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* New document + New folder */}
-      <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-1.5">
+      {/* Header: New document + New folder */}
+      <div className="px-3 pt-3 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
         <button
           onClick={handleNew}
-          className="w-full text-sm font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors"
+          className="w-full text-[13px] font-medium text-white rounded-[4px] px-3 py-1.5 mb-1.5 hover:opacity-90 transition-opacity"
+          style={{ backgroundColor: 'var(--accent)' }}
         >
           + New document
         </button>
@@ -350,13 +415,30 @@ export default function Sidebar() {
                 if (e.key === 'Escape') cancelNewFolder();
               }}
               placeholder="Folder name…"
-              className="w-full text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded px-2.5 py-1.5 outline-none focus:border-gray-400 dark:text-gray-200"
+              className="w-full text-[13px] rounded-[4px] border px-2.5 py-1.5 outline-none"
+              style={{
+                backgroundColor: 'var(--bg-input)',
+                borderColor: 'var(--border)',
+                color: 'var(--text-1)',
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
+              onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
             />
             <div className="flex gap-1.5 mt-1.5">
-              <button onClick={handleCreateFolder} className="flex-1 text-xs font-medium bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 rounded px-2 py-1 hover:bg-gray-600 transition-colors">
+              <button
+                onClick={handleCreateFolder}
+                className="flex-1 text-[12px] font-medium rounded-[4px] px-2 py-1 hover:opacity-80 transition-opacity"
+                style={{ backgroundColor: 'var(--text-1)', color: 'var(--bg-app)' }}
+              >
                 Create
               </button>
-              <button onClick={cancelNewFolder} className="flex-1 text-xs text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+              <button
+                onClick={cancelNewFolder}
+                className="flex-1 text-[12px] rounded-[4px] border px-2 py-1 transition-colors"
+                style={{ color: 'var(--text-2)', borderColor: 'var(--border)' }}
+                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
+              >
                 Cancel
               </button>
             </div>
@@ -364,7 +446,10 @@ export default function Sidebar() {
         ) : (
           <button
             onClick={() => setNewFolderMode(true)}
-            className="w-full text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-left px-1 py-0.5 transition-colors"
+            className="text-[12px] text-left transition-colors"
+            style={{ color: 'var(--text-3)' }}
+            onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-2)')}
+            onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-3)')}
           >
             + New folder
           </button>
@@ -372,28 +457,42 @@ export default function Sidebar() {
       </div>
 
       {/* Search */}
-      <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+      <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
         <input
           type="search"
           placeholder="Search documents…"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setConfirmId(null); }}
-          className="w-full text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md px-3 py-1.5 outline-none focus:border-gray-400 dark:focus:border-gray-400 placeholder-gray-400 dark:text-gray-200"
+          className="w-full text-[13px] rounded-[4px] border px-2.5 py-1.5 outline-none"
+          style={{
+            backgroundColor: 'var(--bg-input)',
+            borderColor: 'var(--border)',
+            color: 'var(--text-1)',
+          }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
+          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
         />
       </div>
 
       {/* Tag filter */}
       {allTags.length > 0 && (
-        <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-1">
+        <div className="px-3 py-2 border-b flex flex-wrap gap-1" style={{ borderColor: 'var(--border)' }}>
           {allTags.map((tag) => (
             <button
               key={tag}
               onClick={() => toggleActiveTag(tag)}
-              className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+              className="text-[11px] px-2 py-px rounded-[4px] border font-mono transition-colors"
+              style={
                 activeTags.has(tag)
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900'
-              }`}
+                  ? { backgroundColor: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
+                  : { backgroundColor: 'var(--tag-bg)', color: 'var(--tag-text)', borderColor: 'var(--tag-border)' }
+              }
+              onMouseOver={(e) => {
+                if (!activeTags.has(tag)) e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
+              }}
+              onMouseOut={(e) => {
+                if (!activeTags.has(tag)) e.currentTarget.style.backgroundColor = 'var(--tag-bg)';
+              }}
             >
               {tag}
             </button>
@@ -405,13 +504,17 @@ export default function Sidebar() {
       <nav className="flex-1 overflow-y-auto">
         {activeDocs.length === 0 ? (
           <div className="px-4 mt-10 text-center">
-            <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">No documents yet</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Click &ldquo;+ New document&rdquo; to get started.</p>
+            <p className="text-[13px] font-medium" style={{ color: 'var(--text-2)' }}>No documents yet</p>
+            <p className="text-[12px] mt-1" style={{ color: 'var(--text-3)' }}>
+              Click &ldquo;+ New document&rdquo; to get started.
+            </p>
           </div>
         ) : filteredActive.length === 0 ? (
           <div className="px-4 mt-10 text-center">
-            <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">No results</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Try adjusting your search or tag filters.</p>
+            <p className="text-[13px] font-medium" style={{ color: 'var(--text-2)' }}>No results</p>
+            <p className="text-[12px] mt-1" style={{ color: 'var(--text-3)' }}>
+              Try adjusting your search or tag filters.
+            </p>
           </div>
         ) : (
           <>
@@ -425,31 +528,43 @@ export default function Sidebar() {
               return (
                 <div key={folder.id}>
                   <div
-                    className={`flex items-center px-2 py-1.5 border-b border-gray-100 dark:border-gray-700 group/folder ${isDragOver ? 'bg-blue-50 dark:bg-blue-950/30' : ''}`}
+                    className="flex items-center px-2.5 py-1.5 border-b group/folder"
+                    style={{
+                      borderColor: 'var(--border)',
+                      backgroundColor: isDragOver ? 'rgba(0,122,255,0.08)' : undefined,
+                    }}
                     onDragOver={(e) => { e.preventDefault(); setDragOverTarget(folder.id); }}
                     onDragLeave={() => setDragOverTarget(null)}
                     onDrop={(e) => handleDrop(e, folder.id)}
                   >
                     <button
                       onClick={() => toggleFolderCollapse(folder.id)}
-                      className="flex items-center gap-1 flex-1 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hover:text-gray-800 dark:hover:text-gray-200 transition-colors min-w-0"
+                      className="flex items-center gap-1 flex-1 text-left text-[11px] font-semibold uppercase tracking-wider transition-colors min-w-0"
+                      style={{ color: 'var(--text-2)' }}
+                      onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-1)')}
+                      onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-2)')}
                     >
-                      <span className="text-[10px]">{isCollapsed ? '▸' : '▾'}</span>
+                      <span className="text-[10px] font-normal">{isCollapsed ? '▸' : '▾'}</span>
                       <span className="truncate">{folder.name}</span>
-                      <span className="font-normal text-gray-400 dark:text-gray-500 ml-0.5">({totalInFolder})</span>
+                      <span className="font-normal ml-0.5 normal-case tracking-normal" style={{ color: 'var(--text-3)' }}>
+                        ({totalInFolder})
+                      </span>
                     </button>
                     <button
                       onClick={() => initiateDeleteFolder(folder)}
-                      className="p-1 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover/folder:opacity-100 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-all flex-shrink-0"
+                      className="p-1 rounded-[4px] opacity-0 group-hover/folder:opacity-100 hover:text-red-500 transition-all flex-shrink-0 text-[11px]"
+                      style={{ color: 'var(--text-3)' }}
                       aria-label={`Delete folder ${folder.name}`}
                     >
                       ✕
                     </button>
                   </div>
                   {!isCollapsed && (
-                    <ul className="pl-3">
+                    <ul className="pl-2">
                       {folderDocs.length === 0 ? (
-                        <li className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500 italic">Empty</li>
+                        <li className="px-3 py-2 text-[12px] italic" style={{ color: 'var(--text-3)' }}>
+                          Empty
+                        </li>
                       ) : (
                         folderDocs.map((doc) => renderDocRow(doc))
                       )}
@@ -461,7 +576,8 @@ export default function Sidebar() {
 
             {/* Unfiled */}
             <div
-              className={`min-h-[8px] ${dragOverTarget === 'unfiled' ? 'bg-blue-50 dark:bg-blue-950/30' : ''}`}
+              className="min-h-[8px]"
+              style={dragOverTarget === 'unfiled' ? { backgroundColor: 'rgba(0,122,255,0.08)' } : {}}
               onDragOver={(e) => { e.preventDefault(); setDragOverTarget('unfiled'); }}
               onDragLeave={() => setDragOverTarget(null)}
               onDrop={(e) => handleDrop(e, null)}
@@ -475,45 +591,65 @@ export default function Sidebar() {
 
         {/* Trash section */}
         {trashedDocs.length > 0 && (
-          <div className="border-t border-gray-200 dark:border-gray-700 mt-1">
-            <div className="flex items-center px-3 py-2">
+          <div className="border-t mt-2" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center px-2.5 py-1.5">
               <button
                 onClick={() => setTrashCollapsed((c) => !c)}
-                className="flex items-center gap-1 flex-1 text-left text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                className="flex items-center gap-1 flex-1 text-left text-[11px] font-semibold uppercase tracking-wider transition-colors"
+                style={{ color: 'var(--text-3)' }}
+                onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-2)')}
+                onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-3)')}
               >
-                <span className="text-[10px]">{trashCollapsed ? '▸' : '▾'}</span>
+                <span className="text-[10px] font-normal">{trashCollapsed ? '▸' : '▾'}</span>
                 Trash ({trashedDocs.length})
               </button>
               {emptyTrashConfirm ? (
-                <div className="flex items-center gap-1.5">
-                  <button onClick={handleEmptyTrash} className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleEmptyTrash}
+                    className="text-[12px] font-medium text-red-600 hover:underline"
+                  >
                     Confirm
                   </button>
-                  <button onClick={() => setEmptyTrashConfirm(false)} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                  <button
+                    onClick={() => setEmptyTrashConfirm(false)}
+                    className="text-[12px] transition-colors"
+                    style={{ color: 'var(--text-3)' }}
+                    onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-2)')}
+                    onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-3)')}
+                  >
                     Cancel
                   </button>
                 </div>
               ) : (
                 <button
                   onClick={() => setEmptyTrashConfirm(true)}
-                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-500 transition-colors"
+                  className="text-[12px] transition-colors hover:text-red-500"
+                  style={{ color: 'var(--text-3)' }}
                 >
                   Empty
                 </button>
               )}
             </div>
             {!trashCollapsed && filteredTrashed.map((doc) => (
-              <div key={doc.id} className="flex items-center px-3 py-2 border-b border-gray-100 dark:border-gray-700/50 group/trash">
+              <div
+                key={doc.id}
+                className="flex items-center px-2.5 py-[6px] border-b group/trash"
+                style={{ borderColor: 'var(--border)' }}
+              >
                 <Link href={`/docs/${doc.id}`} className="flex-1 min-w-0">
-                  <span className="text-sm text-gray-400 dark:text-gray-500 truncate block">
+                  <span className="text-[13px] truncate block" style={{ color: 'var(--text-3)' }}>
                     {doc.title || 'Untitled'}
                   </span>
-                  <span className="text-xs text-gray-300 dark:text-gray-600">{timeAgo(doc.deletedAt!)}</span>
+                  <span className="font-mono text-[11px]" style={{ color: 'var(--text-3)' }}>
+                    {timeAgo(doc.deletedAt!)}
+                  </span>
                 </Link>
                 <button
                   onClick={() => handleRestore(doc.id)}
                   aria-label="Restore document"
-                  className="text-xs text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 px-1.5 flex-shrink-0 transition-colors"
+                  className="text-[12px] px-1.5 flex-shrink-0 hover:opacity-70 transition-opacity"
+                  style={{ color: 'var(--accent)' }}
                   title="Restore"
                 >
                   ↩
@@ -521,7 +657,8 @@ export default function Sidebar() {
                 <button
                   onClick={() => handlePermanentDelete(doc.id)}
                   aria-label="Delete permanently"
-                  className="p-1 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover/trash:opacity-100 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-all flex-shrink-0"
+                  className="p-1 rounded-[4px] opacity-0 group-hover/trash:opacity-100 hover:text-red-500 transition-all flex-shrink-0 text-[11px]"
+                  style={{ color: 'var(--text-3)' }}
                 >
                   ✕
                 </button>
@@ -532,19 +669,34 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="p-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
-        <div className="flex gap-1">
-          <button onClick={handleExport} className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors px-2 py-1 rounded border border-gray-200 dark:border-gray-600">
+      <div className="px-3 py-2.5 border-t flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex gap-3">
+          <button
+            onClick={handleExport}
+            className="text-[12px] transition-colors"
+            style={{ color: 'var(--text-2)' }}
+            onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-1)')}
+            onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-2)')}
+          >
             Export
           </button>
-          <button onClick={() => fileRef.current?.click()} className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors px-2 py-1 rounded border border-gray-200 dark:border-gray-600">
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="text-[12px] transition-colors"
+            style={{ color: 'var(--text-2)' }}
+            onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-1)')}
+            onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-2)')}
+          >
             Import
           </button>
           <input ref={fileRef} type="file" accept=".json" onChange={handleImport} className="hidden" />
         </div>
         <button
           onClick={toggleTheme}
-          className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors px-2 py-1 rounded border border-gray-200 dark:border-gray-600"
+          className="text-[12px] transition-colors"
+          style={{ color: 'var(--text-2)' }}
+          onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-1)')}
+          onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-2)')}
         >
           {theme === 'light' ? 'Dark' : 'Light'}
         </button>

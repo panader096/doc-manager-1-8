@@ -164,11 +164,11 @@ export default function DocPage() {
   if (doc === null) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
-        <p className="text-gray-900 dark:text-gray-100 font-medium">Document not found</p>
-        <p className="text-sm text-gray-400 dark:text-gray-500">
+        <p className="text-[14px] font-medium" style={{ color: 'var(--text-1)' }}>Document not found</p>
+        <p className="text-[13px]" style={{ color: 'var(--text-3)' }}>
           This document may have been deleted or the link is incorrect.
         </p>
-        <Link href="/docs" className="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-1">
+        <Link href="/docs" className="text-[13px] mt-1 hover:underline" style={{ color: 'var(--accent)' }}>
           ← Back to workspace
         </Link>
       </div>
@@ -179,16 +179,18 @@ export default function DocPage() {
   const hasHistory = (doc.history ?? []).length > 0;
 
   return (
-    <div className="flex flex-col h-full px-6 md:px-10 py-8 max-w-3xl mx-auto w-full">
+    <div className="flex flex-col h-full px-8 py-8 max-w-[800px] mx-auto w-full">
+
       {/* Trash banner */}
       {isInTrash && (
-        <div className="mb-4 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 flex items-center justify-between">
-          <span className="text-sm text-amber-700 dark:text-amber-400">
-            This document is in trash.
-          </span>
+        <div
+          className="mb-4 px-3 py-2 rounded-[4px] border flex items-center justify-between"
+          style={{ backgroundColor: 'rgba(253,224,71,0.12)', borderColor: 'rgba(251,191,36,0.35)' }}
+        >
+          <span className="text-[13px] text-amber-600">This document is in trash.</span>
           <button
             onClick={handleRestoreDoc}
-            className="text-sm font-medium text-amber-700 dark:text-amber-400 hover:underline ml-3"
+            className="text-[13px] font-medium text-amber-600 hover:underline ml-3"
           >
             Restore
           </button>
@@ -197,22 +199,27 @@ export default function DocPage() {
 
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-4">
-        <span className="text-xs text-gray-400 dark:text-gray-500">
+        <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
           {isInTrash
             ? 'Read-only — restore to edit'
             : mode === 'edit'
             ? 'Tip: # Heading · **bold** · *italic* · - list'
             : 'Preview mode — click Edit to make changes'}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {!isInTrash && mode === 'edit' && (
             <button
               onClick={handleSave}
-              className={`text-xs font-medium px-3 py-1 rounded border transition-colors ${
+              className="text-[12px] font-medium px-3 py-1 rounded-[4px] border transition-colors"
+              style={
                 saved
-                  ? 'border-green-300 dark:border-green-700 text-green-600 dark:text-green-400'
-                  : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
+                  ? { borderColor: '#86efac', color: '#16a34a' }
+                  : { borderColor: 'var(--border)', color: 'var(--text-2)' }
+              }
+              onMouseOver={(e) => {
+                if (!saved) e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
+              }}
+              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
             >
               {saved ? 'Saved ✓' : 'Save'}
             </button>
@@ -220,11 +227,16 @@ export default function DocPage() {
           {hasHistory && (
             <button
               onClick={() => setShowHistory((s) => !s)}
-              className={`text-xs font-medium px-3 py-1 rounded border transition-colors ${
+              className="text-[12px] font-medium px-3 py-1 rounded-[4px] border transition-colors"
+              style={
                 showHistory
-                  ? 'border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950'
-                  : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
+                  ? { borderColor: 'var(--accent)', color: 'var(--accent)' }
+                  : { borderColor: 'var(--border)', color: 'var(--text-2)' }
+              }
+              onMouseOver={(e) => {
+                if (!showHistory) e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
+              }}
+              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
             >
               History ({doc.history!.length})
             </button>
@@ -232,7 +244,10 @@ export default function DocPage() {
           {!isInTrash && (
             <button
               onClick={() => setMode(mode === 'edit' ? 'preview' : 'edit')}
-              className="text-xs font-medium px-3 py-1 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              className="text-[12px] font-medium px-3 py-1 rounded-[4px] border transition-colors"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-2)' }}
+              onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
             >
               {mode === 'edit' ? 'Preview' : 'Edit'}
             </button>
@@ -242,22 +257,45 @@ export default function DocPage() {
 
       {/* History panel */}
       {showHistory && hasHistory && (
-        <div className="mb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 overflow-hidden">
-          <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Saved versions</span>
-            <button onClick={() => setShowHistory(false)} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+        <div
+          className="mb-4 rounded-[4px] border overflow-hidden"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)' }}
+        >
+          <div
+            className="px-3 py-2 border-b flex items-center justify-between"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <span className="text-[12px] font-medium" style={{ color: 'var(--text-1)' }}>Saved versions</span>
+            <button
+              onClick={() => setShowHistory(false)}
+              className="text-[12px] transition-colors"
+              style={{ color: 'var(--text-3)' }}
+              onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-2)')}
+              onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-3)')}
+            >
               Close
             </button>
           </div>
           {doc.history!.map((snap, i) => (
-            <div key={i} className="flex items-center justify-between px-3 py-2.5 border-b last:border-0 border-gray-100 dark:border-gray-700/50">
+            <div
+              key={i}
+              className="flex items-center justify-between px-3 py-2 border-b last:border-0"
+              style={{ borderColor: 'var(--border)' }}
+            >
               <div>
-                <p className="text-sm text-gray-800 dark:text-gray-200 font-medium">{snap.title || 'Untitled'}</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{timeAgo(snap.savedAt)}</p>
+                <p className="text-[13px] font-medium" style={{ color: 'var(--text-1)' }}>
+                  {snap.title || 'Untitled'}
+                </p>
+                <p className="font-mono text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                  {timeAgo(snap.savedAt)}
+                </p>
               </div>
               <button
                 onClick={() => setPreviewSnapshot(snap)}
-                className="text-xs px-2.5 py-1 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-800 transition-colors"
+                className="text-[12px] px-2.5 py-1 rounded-[4px] border transition-colors"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-2)' }}
+                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
               >
                 Preview
               </button>
@@ -274,21 +312,34 @@ export default function DocPage() {
           onChange={(e) => handleChange('title', e.target.value)}
           onKeyDown={handleTitleKeyDown}
           placeholder="Untitled"
-          className="text-2xl font-bold text-gray-900 dark:text-gray-100 bg-transparent border-none outline-none w-full mb-3 placeholder-gray-300 dark:placeholder-gray-600"
+          className="text-[22px] font-bold bg-transparent border-none outline-none w-full mb-3"
+          style={{ color: 'var(--text-1)' }}
         />
       ) : (
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">
-          {doc.title || <span className="text-gray-300 dark:text-gray-600">Untitled</span>}
+        <h1 className="text-[22px] font-bold mb-3" style={{ color: 'var(--text-1)' }}>
+          {doc.title || <span style={{ color: 'var(--text-3)' }}>Untitled</span>}
         </h1>
       )}
 
       {/* Tags */}
       <div className="flex flex-wrap gap-1.5 items-center mb-5 min-h-[24px]">
         {doc.tags.map((tag) => (
-          <span key={tag} className="flex items-center gap-1 text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 rounded-full">
+          <span
+            key={tag}
+            className="flex items-center gap-1 text-[10px] px-2 py-px rounded-[4px] border font-mono"
+            style={{
+              backgroundColor: 'var(--tag-bg)',
+              color: 'var(--tag-text)',
+              borderColor: 'var(--tag-border)',
+            }}
+          >
             {tag}
             {mode === 'edit' && !isInTrash && (
-              <button onClick={() => removeTag(tag)} aria-label={`Remove tag ${tag}`} className="hover:text-red-500 dark:hover:text-red-400 leading-none">
+              <button
+                onClick={() => removeTag(tag)}
+                aria-label={`Remove tag ${tag}`}
+                className="hover:text-red-500 leading-none"
+              >
                 ×
               </button>
             )}
@@ -299,7 +350,8 @@ export default function DocPage() {
             ref={tagInputRef}
             placeholder={doc.tags.length === 0 ? 'Add tag…' : ''}
             onKeyDown={handleTagInput}
-            className="text-xs outline-none bg-transparent text-gray-600 dark:text-gray-400 placeholder-gray-300 dark:placeholder-gray-600 min-w-[60px]"
+            className="text-[11px] outline-none bg-transparent font-mono min-w-[60px]"
+            style={{ color: 'var(--text-2)' }}
           />
         )}
       </div>
@@ -312,36 +364,73 @@ export default function DocPage() {
             value={doc.body}
             onChange={(e) => handleChange('body', e.target.value)}
             placeholder="Start writing…"
-            className="flex-1 text-gray-700 dark:text-gray-300 text-base leading-relaxed bg-transparent border-none outline-none resize-none placeholder-gray-300 dark:placeholder-gray-600 font-mono text-sm"
+            className="flex-1 text-[13px] leading-relaxed bg-transparent border-none outline-none resize-none font-mono"
+            style={{ color: 'var(--text-1)' }}
           />
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 select-none">
+          <p className="font-mono text-[11px] mt-2 select-none" style={{ color: 'var(--text-3)' }}>
             {wordCount(doc.body)} {wordCount(doc.body) === 1 ? 'word' : 'words'}
           </p>
         </>
       ) : (
         <div
-          className="doc-preview flex-1 overflow-auto dark:text-gray-200"
+          className="doc-preview flex-1 overflow-auto"
           dangerouslySetInnerHTML={{
-            __html: parseMarkdown(doc.body) || '<p class="text-gray-300 dark:text-gray-600">Nothing to preview yet.</p>',
+            __html: parseMarkdown(doc.body) || `<p style="color:var(--text-3)">Nothing to preview yet.</p>`,
           }}
         />
       )}
 
       {/* History preview modal */}
       {previewSnapshot && (
-        <div className="fixed inset-0 bg-black/50 dark:bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPreviewSnapshot(null)}>
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 pt-5 pb-3 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Saved version · {timeAgo(previewSnapshot.savedAt)}</p>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{previewSnapshot.title || 'Untitled'}</h2>
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => setPreviewSnapshot(null)}
+        >
+          <div
+            className="rounded-[8px] border max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
+            style={{
+              backgroundColor: 'var(--bg-modal)',
+              borderColor: 'var(--border)',
+              boxShadow: 'var(--shadow-modal)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="px-6 pt-5 pb-3 border-b flex-shrink-0"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              <p className="font-mono text-[11px] mb-1" style={{ color: 'var(--text-3)' }}>
+                Saved version · {timeAgo(previewSnapshot.savedAt)}
+              </p>
+              <h2 className="text-[20px] font-bold" style={{ color: 'var(--text-1)' }}>
+                {previewSnapshot.title || 'Untitled'}
+              </h2>
             </div>
-            <div className="doc-preview flex-1 overflow-auto px-6 py-4 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: parseMarkdown(previewSnapshot.body) || '<p class="text-gray-300 dark:text-gray-600">Empty document.</p>' }} />
-            <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-2 flex-shrink-0">
-              <button onClick={() => setPreviewSnapshot(null)} className="text-sm px-4 py-1.5 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+            <div
+              className="doc-preview flex-1 overflow-auto px-6 py-4"
+              dangerouslySetInnerHTML={{
+                __html: parseMarkdown(previewSnapshot.body) || `<p style="color:var(--text-3)">Empty document.</p>`,
+              }}
+            />
+            <div
+              className="px-6 py-4 border-t flex justify-end gap-2 flex-shrink-0"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              <button
+                onClick={() => setPreviewSnapshot(null)}
+                className="text-[13px] px-4 py-1.5 rounded-[4px] border transition-colors"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-2)' }}
+                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
+              >
                 Cancel
               </button>
               {!isInTrash && (
-                <button onClick={() => handleRestore(previewSnapshot)} className="text-sm px-4 py-1.5 rounded bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors font-medium">
+                <button
+                  onClick={() => handleRestore(previewSnapshot)}
+                  className="text-[13px] px-4 py-1.5 rounded-[4px] font-medium hover:opacity-80 transition-opacity"
+                  style={{ backgroundColor: 'var(--text-1)', color: 'var(--bg-app)' }}
+                >
                   Restore this version
                 </button>
               )}
