@@ -39,6 +39,7 @@ export default function Sidebar() {
   const [newFolderName, setNewFolderName] = useState('');
   const [folderDeleteConfirm, setFolderDeleteConfirm] = useState<FolderDeleteConfirm>(null);
   const [emptyTrashConfirm, setEmptyTrashConfirm] = useState(false);
+  const [trashCollapsed, setTrashCollapsed] = useState(true);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window === 'undefined') return 'light';
     return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
@@ -476,9 +477,13 @@ export default function Sidebar() {
         {trashedDocs.length > 0 && (
           <div className="border-t border-gray-200 dark:border-gray-700 mt-1">
             <div className="flex items-center px-3 py-2">
-              <span className="flex-1 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+              <button
+                onClick={() => setTrashCollapsed((c) => !c)}
+                className="flex items-center gap-1 flex-1 text-left text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <span className="text-[10px]">{trashCollapsed ? '▸' : '▾'}</span>
                 Trash ({trashedDocs.length})
-              </span>
+              </button>
               {emptyTrashConfirm ? (
                 <div className="flex items-center gap-1.5">
                   <button onClick={handleEmptyTrash} className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline">
@@ -497,7 +502,7 @@ export default function Sidebar() {
                 </button>
               )}
             </div>
-            {filteredTrashed.map((doc) => (
+            {!trashCollapsed && filteredTrashed.map((doc) => (
               <div key={doc.id} className="flex items-center px-3 py-2 border-b border-gray-100 dark:border-gray-700/50 group/trash">
                 <Link href={`/docs/${doc.id}`} className="flex-1 min-w-0">
                   <span className="text-sm text-gray-400 dark:text-gray-500 truncate block">
