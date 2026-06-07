@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getDocument, updateDocument, Doc } from '../../lib/documents';
 
@@ -55,8 +55,11 @@ function parseMarkdown(text: string): string {
 
 export default function DocPage() {
   const { id } = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const [doc, setDoc] = useState<Doc | null | undefined>(undefined);
-  const [mode, setMode] = useState<'edit' | 'preview'>('preview');
+  const [mode, setMode] = useState<'edit' | 'preview'>(
+    searchParams.get('new') === '1' ? 'edit' : 'preview'
+  );
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -116,14 +119,20 @@ export default function DocPage() {
       </div>
 
       {/* Title */}
-      <input
-        type="text"
-        value={doc.title}
-        onChange={(e) => handleChange('title', e.target.value)}
-        onKeyDown={handleTitleKeyDown}
-        placeholder="Untitled"
-        className="text-2xl font-bold text-gray-900 bg-transparent border-none outline-none w-full mb-6 placeholder-gray-300"
-      />
+      {mode === 'edit' ? (
+        <input
+          type="text"
+          value={doc.title}
+          onChange={(e) => handleChange('title', e.target.value)}
+          onKeyDown={handleTitleKeyDown}
+          placeholder="Untitled"
+          className="text-2xl font-bold text-gray-900 bg-transparent border-none outline-none w-full mb-6 placeholder-gray-300"
+        />
+      ) : (
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">
+          {doc.title || <span className="text-gray-300">Untitled</span>}
+        </h1>
+      )}
 
       {/* Body — edit or preview */}
       {mode === 'edit' ? (

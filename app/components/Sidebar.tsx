@@ -38,7 +38,7 @@ export default function Sidebar() {
   function handleNew() {
     const doc = createDocument();
     window.dispatchEvent(new Event('docs-updated'));
-    router.push(`/docs/${doc.id}`);
+    router.push(`/docs/${doc.id}?new=1`);
   }
 
   function handleDelete(id: string) {
