@@ -1,3 +1,9 @@
+export interface DocSnapshot {
+  title: string;
+  body: string;
+  savedAt: string;
+}
+
 export interface Doc {
   id: string;
   title: string;
@@ -5,6 +11,8 @@ export interface Doc {
   createdAt: string;
   updatedAt: string;
   starred?: boolean;
+  tags: string[];
+  history?: DocSnapshot[];
 }
 
 const STORAGE_KEY = 'doc_manager_documents';
@@ -12,7 +20,9 @@ const STORAGE_KEY = 'doc_manager_documents';
 export function getDocuments(): Doc[] {
   if (typeof window === 'undefined') return [];
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as Doc[];
+    // Migrate docs that predate tags / history fields
+    return raw.map((d) => ({ tags: [], history: [], ...d }));
   } catch {
     return [];
   }
@@ -30,6 +40,8 @@ export function createDocument(): Doc {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     starred: false,
+    tags: [],
+    history: [],
   };
   saveDocuments([doc, ...getDocuments()]);
   return doc;
@@ -50,6 +62,14 @@ export function updateDocument(
   );
 }
 
+export function updateDocumentTags(id: string, tags: string[]): void {
+  saveDocuments(
+    getDocuments().map((d) =>
+      d.id === id ? { ...d, tags } : d
+    )
+  );
+}
+
 export function toggleStar(id: string): void {
   saveDocuments(
     getDocuments().map((d) =>
@@ -58,6 +78,39 @@ export function toggleStar(id: string): void {
   );
 }
 
+export function saveSnapshot(id: string): void {
+  const docs = getDocuments();
+  const doc = docs.find((d) => d.id === id);
+  if (!doc) return;
+  const snapshot: DocSnapshot = {
+    title: doc.title,
+    body: doc.body,
+    savedAt: new Date().toISOString(),
+  };
+  const history = [snapshot, ...(doc.history ?? [])].slice(0, 3);
+  saveDocuments(docs.map((d) => (d.id === id ? { ...d, history } : d)));
+}
+
 export function deleteDocument(id: string): void {
   saveDocuments(getDocuments().filter((d) => d.id !== id));
+}
+
+export function exportWorkspace(): string {
+  return JSON.stringify(getDocuments(), null, 2);
+}
+
+export function importWorkspace(incoming: Doc[]): void {
+  const existing = getDocuments();
+  const usedIds = new Set(existing.map((d) => d.id));
+  const toImport = incoming.map((doc) => {
+    let newId = doc.id;
+    if (usedIds.has(newId)) {
+      let n = 1;
+      while (usedIds.has(`${doc.id}(${n})`)) n++;
+      newId = `${doc.id}(${n})`;
+    }
+    usedIds.add(newId);
+    return { tags: [], history: [], ...doc, id: newId };
+  });
+  saveDocuments([...existing, ...toImport]);
 }
