@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { getDocuments, createDocument, Doc } from '../lib/documents';
+import { getDocuments, createDocument, deleteDocument, Doc } from '../lib/documents';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -22,11 +22,10 @@ export default function Sidebar() {
 
   const [docs, setDocs] = useState<Doc[]>([]);
   const [query, setQuery] = useState('');
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
-    function refresh() {
-      setDocs(getDocuments());
-    }
+    function refresh() { setDocs(getDocuments()); }
     refresh();
     window.addEventListener('docs-updated', refresh);
     return () => window.removeEventListener('docs-updated', refresh);
@@ -40,6 +39,13 @@ export default function Sidebar() {
     const doc = createDocument();
     window.dispatchEvent(new Event('docs-updated'));
     router.push(`/docs/${doc.id}`);
+  }
+
+  function handleDelete(id: string) {
+    deleteDocument(id);
+    window.dispatchEvent(new Event('docs-updated'));
+    setConfirmId(null);
+    if (activeId === id) router.push('/docs');
   }
 
   return (
@@ -58,33 +64,70 @@ export default function Sidebar() {
           type="search"
           placeholder="Search documents…"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => { setQuery(e.target.value); setConfirmId(null); }}
           className="w-full text-sm bg-white border border-gray-200 rounded-md px-3 py-1.5 outline-none focus:border-gray-400 placeholder-gray-400"
         />
       </div>
 
       <nav className="flex-1 overflow-y-auto">
-        {filtered.length === 0 ? (
-          <p className="text-xs text-gray-400 text-center mt-8 px-3">
-            {query ? 'No documents match your search.' : 'No documents yet.'}
-          </p>
+        {docs.length === 0 ? (
+          <div className="px-4 mt-10 text-center">
+            <p className="text-sm text-gray-500 font-medium">No documents yet</p>
+            <p className="text-xs text-gray-400 mt-1">
+              Click &ldquo;+ New document&rdquo; to get started.
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="px-4 mt-10 text-center">
+            <p className="text-sm text-gray-500 font-medium">No results</p>
+            <p className="text-xs text-gray-400 mt-1">
+              No documents match &ldquo;{query}&rdquo;.
+            </p>
+          </div>
         ) : (
           <ul>
             {filtered.map((doc) => (
-              <li key={doc.id}>
-                <Link
-                  href={`/docs/${doc.id}`}
-                  className={`flex flex-col px-3 py-2.5 border-b border-gray-100 hover:bg-gray-100 transition-colors ${
-                    activeId === doc.id ? 'bg-gray-100' : ''
-                  }`}
-                >
-                  <span className={`text-sm text-gray-900 truncate ${activeId === doc.id ? 'font-medium' : ''}`}>
-                    {doc.title || 'Untitled'}
-                  </span>
-                  <span className="text-xs text-gray-400 mt-0.5">
-                    {timeAgo(doc.updatedAt)}
-                  </span>
-                </Link>
+              <li key={doc.id} className={`border-b border-gray-100 ${activeId === doc.id ? 'bg-gray-100' : ''}`}>
+                {confirmId === doc.id ? (
+                  <div className="px-3 py-2.5">
+                    <p className="text-xs text-gray-600 mb-2">Delete &ldquo;{doc.title || 'Untitled'}&rdquo;?</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleDelete(doc.id)}
+                        className="flex-1 text-xs font-medium bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700 transition-colors"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmId(null)}
+                        className="flex-1 text-xs text-gray-600 border border-gray-200 rounded px-2 py-1 hover:bg-gray-100 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center group">
+                    <Link
+                      href={`/docs/${doc.id}`}
+                      className="flex flex-col flex-1 px-3 py-2.5 min-w-0"
+                    >
+                      <span className={`text-sm text-gray-900 truncate ${activeId === doc.id ? 'font-medium' : ''}`}>
+                        {doc.title || 'Untitled'}
+                      </span>
+                      <span className="text-xs text-gray-400 mt-0.5">
+                        {timeAgo(doc.updatedAt)}
+                      </span>
+                    </Link>
+                    <button
+                      onClick={() => setConfirmId(doc.id)}
+                      aria-label="Delete document"
+                      className="mr-2 p-1 rounded text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 transition-all"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
