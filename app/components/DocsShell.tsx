@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
+import CommandPalette from './CommandPalette';
 
 export default function DocsShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -51,6 +52,7 @@ export default function DocsShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex-1 overflow-auto">{children}</div>
       </main>
+      <CommandPalette />
     </div>
   );
 }

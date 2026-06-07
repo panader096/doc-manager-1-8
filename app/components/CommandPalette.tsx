@@ -1,0 +1,168 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { getDocuments, deleteDocument, Doc } from '../lib/documents';
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+export default function CommandPalette() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [docs, setDocs] = useState<Doc[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function loadDocs() {
+    setDocs(
+      getDocuments()
+        .filter((d) => !d.deletedAt)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    );
+  }
+
+  useEffect(() => {
+    function handleGlobalKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setOpen((prev) => {
+          if (!prev) { loadDocs(); setQuery(''); setSelectedIndex(0); }
+          return !prev;
+        });
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const refresh = () => loadDocs();
+    window.addEventListener('docs-updated', refresh);
+    return () => window.removeEventListener('docs-updated', refresh);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  const filtered = docs.filter((d) =>
+    d.title.toLowerCase().includes(query.toLowerCase())
+  );
+
+  useEffect(() => { setSelectedIndex(0); }, [query]);
+
+  function close() { setOpen(false); setQuery(''); }
+
+  function navigate(id: string, mode?: 'edit') {
+    close();
+    router.push(mode === 'edit' ? `/docs/${id}?mode=edit` : `/docs/${id}`);
+  }
+
+  function handleDelete(docId: string) {
+    deleteDocument(docId);
+    window.dispatchEvent(new Event('docs-updated'));
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    switch (e.key) {
+      case 'Escape': close(); break;
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedIndex((i) => Math.max(i - 1, 0));
+        break;
+      case 'Enter':
+        if (filtered[selectedIndex]) navigate(filtered[selectedIndex].id);
+        break;
+    }
+  }
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 dark:bg-black/70 z-50 flex items-start justify-center pt-[15vh] px-4"
+      onClick={close}
+    >
+      <div
+        className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Search documents…"
+          className="w-full px-4 py-3.5 text-sm outline-none bg-transparent border-b border-gray-100 dark:border-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
+        />
+
+        <div className="max-h-80 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="px-4 py-8 text-sm text-center text-gray-400 dark:text-gray-500">
+              {query ? `No documents matching "${query}"` : 'No documents yet'}
+            </p>
+          ) : (
+            filtered.map((doc, i) => (
+              <div
+                key={doc.id}
+                className={`flex items-center px-3 py-2.5 gap-2 ${
+                  i === selectedIndex ? 'bg-gray-50 dark:bg-gray-800' : ''
+                }`}
+                onMouseEnter={() => setSelectedIndex(i)}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                    {doc.title || 'Untitled'}
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    {timeAgo(doc.updatedAt)}
+                  </p>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => navigate(doc.id)}
+                    className="text-xs px-2 py-1 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    Preview
+                  </button>
+                  <button
+                    onClick={() => navigate(doc.id, 'edit')}
+                    className="text-xs px-2 py-1 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(doc.id)}
+                    className="text-xs px-2 py-1 rounded text-gray-500 dark:text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700 flex gap-4 text-xs text-gray-400 dark:text-gray-500">
+          <span>↑↓ navigate</span>
+          <span>↵ open</span>
+          <span>Esc close</span>
+        </div>
+      </div>
+    </div>
+  );
+}

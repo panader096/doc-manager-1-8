@@ -8,6 +8,7 @@ import {
   updateDocument,
   updateDocumentTags,
   saveSnapshot,
+  restoreDocument,
   Doc,
   DocSnapshot,
 } from '../../lib/documents';
@@ -43,7 +44,6 @@ function parseMarkdown(text: string): string {
   const lines = text.split('\n');
   const out: string[] = [];
   let inList = false;
-
   for (const line of lines) {
     if (line.startsWith('### ')) {
       if (inList) { out.push('</ul>'); inList = false; }
@@ -79,7 +79,9 @@ export default function DocPage() {
   const searchParams = useSearchParams();
   const [doc, setDoc] = useState<Doc | null | undefined>(undefined);
   const [mode, setMode] = useState<'edit' | 'preview'>(
-    searchParams.get('new') === '1' ? 'edit' : 'preview'
+    searchParams.get('new') === '1' || searchParams.get('mode') === 'edit'
+      ? 'edit'
+      : 'preview'
   );
   const [saved, setSaved] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -91,6 +93,7 @@ export default function DocPage() {
   useEffect(() => {
     const found = getDocument(id);
     setDoc(found ?? null);
+    if (found?.deletedAt) setMode('preview');
   }, [id]);
 
   function handleChange(field: 'title' | 'body', value: string) {
@@ -104,10 +107,7 @@ export default function DocPage() {
   }
 
   function handleTitleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      bodyRef.current?.focus();
-    }
+    if (e.key === 'Enter') { e.preventDefault(); bodyRef.current?.focus(); }
   }
 
   function handleTagInput(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -141,6 +141,13 @@ export default function DocPage() {
     setTimeout(() => setSaved(false), 1500);
   }
 
+  function handleRestoreDoc() {
+    restoreDocument(id);
+    const updated = getDocument(id);
+    setDoc(updated ?? null);
+    window.dispatchEvent(new Event('docs-updated'));
+  }
+
   function handleRestore(snap: DocSnapshot) {
     if (!doc) return;
     saveSnapshot(id);
@@ -168,19 +175,37 @@ export default function DocPage() {
     );
   }
 
+  const isInTrash = !!doc.deletedAt;
   const hasHistory = (doc.history ?? []).length > 0;
 
   return (
     <div className="flex flex-col h-full px-6 md:px-10 py-8 max-w-3xl mx-auto w-full">
+      {/* Trash banner */}
+      {isInTrash && (
+        <div className="mb-4 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 flex items-center justify-between">
+          <span className="text-sm text-amber-700 dark:text-amber-400">
+            This document is in trash.
+          </span>
+          <button
+            onClick={handleRestoreDoc}
+            className="text-sm font-medium text-amber-700 dark:text-amber-400 hover:underline ml-3"
+          >
+            Restore
+          </button>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-xs text-gray-400 dark:text-gray-500">
-          {mode === 'edit'
+          {isInTrash
+            ? 'Read-only — restore to edit'
+            : mode === 'edit'
             ? 'Tip: # Heading · **bold** · *italic* · - list'
             : 'Preview mode — click Edit to make changes'}
         </span>
         <div className="flex items-center gap-2">
-          {mode === 'edit' && (
+          {!isInTrash && mode === 'edit' && (
             <button
               onClick={handleSave}
               className={`text-xs font-medium px-3 py-1 rounded border transition-colors ${
@@ -204,12 +229,14 @@ export default function DocPage() {
               History ({doc.history!.length})
             </button>
           )}
-          <button
-            onClick={() => setMode(mode === 'edit' ? 'preview' : 'edit')}
-            className="text-xs font-medium px-3 py-1 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          >
-            {mode === 'edit' ? 'Preview' : 'Edit'}
-          </button>
+          {!isInTrash && (
+            <button
+              onClick={() => setMode(mode === 'edit' ? 'preview' : 'edit')}
+              className="text-xs font-medium px-3 py-1 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            >
+              {mode === 'edit' ? 'Preview' : 'Edit'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -218,25 +245,15 @@ export default function DocPage() {
         <div className="mb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 overflow-hidden">
           <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Saved versions</span>
-            <button
-              onClick={() => setShowHistory(false)}
-              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-            >
+            <button onClick={() => setShowHistory(false)} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
               Close
             </button>
           </div>
           {doc.history!.map((snap, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between px-3 py-2.5 border-b last:border-0 border-gray-100 dark:border-gray-700/50"
-            >
+            <div key={i} className="flex items-center justify-between px-3 py-2.5 border-b last:border-0 border-gray-100 dark:border-gray-700/50">
               <div>
-                <p className="text-sm text-gray-800 dark:text-gray-200 font-medium">
-                  {snap.title || 'Untitled'}
-                </p>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                  {timeAgo(snap.savedAt)}
-                </p>
+                <p className="text-sm text-gray-800 dark:text-gray-200 font-medium">{snap.title || 'Untitled'}</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{timeAgo(snap.savedAt)}</p>
               </div>
               <button
                 onClick={() => setPreviewSnapshot(snap)}
@@ -250,7 +267,7 @@ export default function DocPage() {
       )}
 
       {/* Title */}
-      {mode === 'edit' ? (
+      {mode === 'edit' && !isInTrash ? (
         <input
           type="text"
           value={doc.title}
@@ -268,23 +285,16 @@ export default function DocPage() {
       {/* Tags */}
       <div className="flex flex-wrap gap-1.5 items-center mb-5 min-h-[24px]">
         {doc.tags.map((tag) => (
-          <span
-            key={tag}
-            className="flex items-center gap-1 text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 rounded-full"
-          >
+          <span key={tag} className="flex items-center gap-1 text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 rounded-full">
             {tag}
-            {mode === 'edit' && (
-              <button
-                onClick={() => removeTag(tag)}
-                aria-label={`Remove tag ${tag}`}
-                className="hover:text-red-500 dark:hover:text-red-400 leading-none"
-              >
+            {mode === 'edit' && !isInTrash && (
+              <button onClick={() => removeTag(tag)} aria-label={`Remove tag ${tag}`} className="hover:text-red-500 dark:hover:text-red-400 leading-none">
                 ×
               </button>
             )}
           </span>
         ))}
-        {mode === 'edit' && (
+        {mode === 'edit' && !isInTrash && (
           <input
             ref={tagInputRef}
             placeholder={doc.tags.length === 0 ? 'Add tag…' : ''}
@@ -294,8 +304,8 @@ export default function DocPage() {
         )}
       </div>
 
-      {/* Body — edit or preview */}
-      {mode === 'edit' ? (
+      {/* Body */}
+      {mode === 'edit' && !isInTrash ? (
         <>
           <textarea
             ref={bodyRef}
@@ -312,52 +322,29 @@ export default function DocPage() {
         <div
           className="doc-preview flex-1 overflow-auto dark:text-gray-200"
           dangerouslySetInnerHTML={{
-            __html:
-              parseMarkdown(doc.body) ||
-              '<p class="text-gray-300 dark:text-gray-600">Nothing to preview yet.</p>',
+            __html: parseMarkdown(doc.body) || '<p class="text-gray-300 dark:text-gray-600">Nothing to preview yet.</p>',
           }}
         />
       )}
 
       {/* History preview modal */}
       {previewSnapshot && (
-        <div
-          className="fixed inset-0 bg-black/50 dark:bg-black/70 z-50 flex items-center justify-center p-4"
-          onClick={() => setPreviewSnapshot(null)}
-        >
-          <div
-            className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPreviewSnapshot(null)}>
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 pt-5 pb-3 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
-                Saved version · {timeAgo(previewSnapshot.savedAt)}
-              </p>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                {previewSnapshot.title || 'Untitled'}
-              </h2>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Saved version · {timeAgo(previewSnapshot.savedAt)}</p>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{previewSnapshot.title || 'Untitled'}</h2>
             </div>
-            <div
-              className="doc-preview flex-1 overflow-auto px-6 py-4 dark:text-gray-200"
-              dangerouslySetInnerHTML={{
-                __html:
-                  parseMarkdown(previewSnapshot.body) ||
-                  '<p class="text-gray-300 dark:text-gray-600">Empty document.</p>',
-              }}
-            />
+            <div className="doc-preview flex-1 overflow-auto px-6 py-4 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: parseMarkdown(previewSnapshot.body) || '<p class="text-gray-300 dark:text-gray-600">Empty document.</p>' }} />
             <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-2 flex-shrink-0">
-              <button
-                onClick={() => setPreviewSnapshot(null)}
-                className="text-sm px-4 py-1.5 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-              >
+              <button onClick={() => setPreviewSnapshot(null)} className="text-sm px-4 py-1.5 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                 Cancel
               </button>
-              <button
-                onClick={() => handleRestore(previewSnapshot)}
-                className="text-sm px-4 py-1.5 rounded bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors font-medium"
-              >
-                Restore this version
-              </button>
+              {!isInTrash && (
+                <button onClick={() => handleRestore(previewSnapshot)} className="text-sm px-4 py-1.5 rounded bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors font-medium">
+                  Restore this version
+                </button>
+              )}
             </div>
           </div>
         </div>
