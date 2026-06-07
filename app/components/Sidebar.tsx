@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { getDocuments, createDocument, Doc } from '../lib/documents';
 
@@ -15,14 +15,22 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export default function Sidebar({ activeId }: { activeId?: string }) {
+export default function Sidebar() {
   const router = useRouter();
+  const pathname = usePathname();
+  const activeId = pathname.startsWith('/docs/') ? pathname.split('/')[2] : undefined;
+
   const [docs, setDocs] = useState<Doc[]>([]);
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    setDocs(getDocuments());
-  }, [activeId]);
+    function refresh() {
+      setDocs(getDocuments());
+    }
+    refresh();
+    window.addEventListener('docs-updated', refresh);
+    return () => window.removeEventListener('docs-updated', refresh);
+  }, []);
 
   const filtered = docs
     .filter((d) => d.title.toLowerCase().includes(query.toLowerCase()))
@@ -30,7 +38,7 @@ export default function Sidebar({ activeId }: { activeId?: string }) {
 
   function handleNew() {
     const doc = createDocument();
-    setDocs(getDocuments());
+    window.dispatchEvent(new Event('docs-updated'));
     router.push(`/docs/${doc.id}`);
   }
 
@@ -67,10 +75,10 @@ export default function Sidebar({ activeId }: { activeId?: string }) {
                 <Link
                   href={`/docs/${doc.id}`}
                   className={`flex flex-col px-3 py-2.5 border-b border-gray-100 hover:bg-gray-100 transition-colors ${
-                    activeId === doc.id ? 'bg-gray-100 font-medium' : ''
+                    activeId === doc.id ? 'bg-gray-100' : ''
                   }`}
                 >
-                  <span className="text-sm text-gray-900 truncate">
+                  <span className={`text-sm text-gray-900 truncate ${activeId === doc.id ? 'font-medium' : ''}`}>
                     {doc.title || 'Untitled'}
                   </span>
                   <span className="text-xs text-gray-400 mt-0.5">
