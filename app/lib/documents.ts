@@ -30,7 +30,7 @@ export function getDocuments(): Doc[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as Doc[];
-    return raw.map((d) => ({ tags: [], history: [], ...d }));
+    return raw.map((d) => ({ ...d, tags: d.tags ?? [], history: d.history ?? [] }));
   } catch {
     return [];
   }
@@ -164,7 +164,7 @@ export function importWorkspace(incoming: Doc[]): void {
       newId = `${doc.id}(${n})`;
     }
     usedIds.add(newId);
-    return { tags: [], history: [], ...doc, id: newId };
+    return { ...doc, tags: doc.tags ?? [], history: doc.history ?? [], id: newId };
   });
   saveDocuments([...existing, ...toImport]);
 }

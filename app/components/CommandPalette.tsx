@@ -94,11 +94,16 @@ export default function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 dark:bg-black/70 z-50 flex items-start justify-center pt-[15vh] px-4"
+      className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[15vh] px-4"
       onClick={close}
     >
       <div
-        className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-xl overflow-hidden"
+        className="w-full max-w-xl overflow-hidden rounded-[6px] border"
+        style={{
+          backgroundColor: 'var(--bg-modal)',
+          borderColor: 'var(--border)',
+          boxShadow: 'var(--shadow-modal)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <input
@@ -107,47 +112,59 @@ export default function CommandPalette() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Search documents…"
-          className="w-full px-4 py-3.5 text-sm outline-none bg-transparent border-b border-gray-100 dark:border-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
+          className="w-full px-4 py-3 text-[13px] outline-none bg-transparent border-b"
+          style={{
+            borderColor: 'var(--border)',
+            color: 'var(--text-1)',
+          }}
         />
 
         <div className="max-h-80 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-4 py-8 text-sm text-center text-gray-400 dark:text-gray-500">
+            <p className="px-4 py-8 text-[13px] text-center" style={{ color: 'var(--text-3)' }}>
               {query ? `No documents matching "${query}"` : 'No documents yet'}
             </p>
           ) : (
             filtered.map((doc, i) => (
               <div
                 key={doc.id}
-                className={`flex items-center px-3 py-2.5 gap-2 ${
-                  i === selectedIndex ? 'bg-gray-50 dark:bg-gray-800' : ''
-                }`}
+                className="flex items-center px-3 py-[7px] gap-2 cursor-pointer"
+                style={i === selectedIndex ? { backgroundColor: 'var(--bg-active)' } : {}}
                 onMouseEnter={() => setSelectedIndex(i)}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                  <p className="text-[13px] font-medium truncate" style={{ color: 'var(--text-1)' }}>
                     {doc.title || 'Untitled'}
                   </p>
-                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                  <p className="font-mono text-[11px]" style={{ color: 'var(--text-3)' }}>
                     {timeAgo(doc.updatedAt)}
                   </p>
                 </div>
-                <div className="flex gap-1 flex-shrink-0">
+                <div className="flex gap-0.5 flex-shrink-0">
                   <button
                     onClick={() => navigate(doc.id)}
-                    className="text-xs px-2 py-1 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    className="text-[12px] px-2 py-1 rounded-[4px] transition-colors"
+                    style={{ color: 'var(--text-2)' }}
+                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
                   >
                     Preview
                   </button>
                   <button
                     onClick={() => navigate(doc.id, 'edit')}
-                    className="text-xs px-2 py-1 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    className="text-[12px] px-2 py-1 rounded-[4px] transition-colors"
+                    style={{ color: 'var(--text-2)' }}
+                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDelete(doc.id)}
-                    className="text-xs px-2 py-1 rounded text-gray-500 dark:text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                    className="text-[12px] px-2 py-1 rounded-[4px] transition-colors hover:text-red-500"
+                    style={{ color: 'var(--text-2)' }}
+                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '')}
                   >
                     Delete
                   </button>
@@ -157,7 +174,9 @@ export default function CommandPalette() {
           )}
         </div>
 
-        <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700 flex gap-4 text-xs text-gray-400 dark:text-gray-500">
+        <div className="px-4 py-2 border-t flex gap-4 font-mono text-[11px]"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-3)' }}
+        >
           <span>↑↓ navigate</span>
           <span>↵ open</span>
           <span>Esc close</span>
