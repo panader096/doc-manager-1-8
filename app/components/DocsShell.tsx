@@ -8,13 +8,12 @@ export default function DocsShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
 
-  // Close sidebar on navigation (mobile)
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-white dark:bg-gray-950">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -35,11 +34,11 @@ export default function DocsShell({ children }: { children: React.ReactNode }) {
       {/* Content */}
       <main className="flex-1 overflow-auto min-w-0 flex flex-col">
         {/* Mobile top bar */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 md:hidden flex-shrink-0">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950 md:hidden flex-shrink-0">
           <button
             onClick={() => setSidebarOpen(true)}
             aria-label="Open sidebar"
-            className="text-gray-500 hover:text-gray-900 transition-colors"
+            className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
               <rect y="2" width="18" height="2" rx="1" fill="currentColor" />
@@ -47,7 +46,7 @@ export default function DocsShell({ children }: { children: React.ReactNode }) {
               <rect y="14" width="18" height="2" rx="1" fill="currentColor" />
             </svg>
           </button>
-          <span className="text-sm text-gray-400">Documents</span>
+          <span className="text-sm text-gray-400 dark:text-gray-500">Documents</span>
         </div>
 
         <div className="flex-1 overflow-auto">{children}</div>
