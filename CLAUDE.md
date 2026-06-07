@@ -32,3 +32,30 @@ Run `npm run dev`. The app runs at http://localhost:3000.
 - Shared UI components go in `app/components/`
 - Do not add npm packages without asking first
 - Do not put secrets or API keys in source files — use `.env.local`
+- Before building a new feature, ask clarifying questions first to align on scope
+- Keep all styling within the existing Tailwind CSS + CSS custom-property design system — no new UI libraries
+
+## Design system
+
+All colours are CSS custom properties defined in `app/globals.css`. `:root` holds the light values; `.dark` (set on `<html>`) holds the dark values. Components use inline `style={{ color: 'var(--text-1)' }}` or Tailwind arbitrary values `bg-[var(--bg-sidebar)]`. Do **not** add `dark:` Tailwind class pairs — they are unreliable here due to CSS cascade layer ordering. See `docs/REFLECTION.md` for the full explanation.
+
+Key tokens: `--bg-app`, `--bg-sidebar`, `--bg-active`, `--bg-hover`, `--bg-input`, `--bg-modal`, `--border`, `--border-focus`, `--text-1`, `--text-2`, `--text-3`, `--accent`, `--active-bar`, `--tag-bg`, `--tag-text`, `--tag-border`, `--shadow-modal`.
+
+## Features already implemented
+
+Do not re-implement these. Check the relevant component before adding anything adjacent.
+
+| Feature | Location |
+|---|---|
+| Create / edit / delete documents, auto-save | `app/docs/[id]/page.tsx`, `app/lib/documents.ts` |
+| Sidebar with live search | `app/components/Sidebar.tsx` |
+| Markdown preview (inline parser, no library) | `app/docs/[id]/page.tsx` — `parseMarkdown()` |
+| Starred documents (pinned to top) | `toggleStar()` in `documents.ts`; star button in `Sidebar.tsx` |
+| Dark / light theme toggle, FOUC prevention | `Sidebar.tsx` — `toggleTheme()`; `app/layout.tsx` — `Script` |
+| Live word count | `app/docs/[id]/page.tsx` — `wordCount()` |
+| Tags — add, remove, multi-select filter | `updateDocumentTags()` in `documents.ts`; tag UI in `page.tsx` and `Sidebar.tsx` |
+| Export / import workspace (JSON) | `exportWorkspace()` / `importWorkspace()` in `documents.ts` |
+| Document history — snapshot, preview, restore | `saveSnapshot()` in `documents.ts`; history panel in `page.tsx` |
+| Soft delete / trash (collapsible, default collapsed) | `deleteDocument()` / `restoreDocument()` / `emptyTrash()` in `documents.ts` |
+| Command palette — Ctrl+K, fuzzy search | `app/components/CommandPalette.tsx` |
+| Folder structure — drag-and-drop, create, delete | `getFolders()` / `createFolder()` / `deleteFolder()` in `documents.ts`; folder UI in `Sidebar.tsx` |
