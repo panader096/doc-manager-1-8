@@ -693,6 +693,7 @@ export default function Sidebar() {
         </div>
         <button
           onClick={toggleTheme}
+          suppressHydrationWarning
           className="text-[12px] transition-colors"
           style={{ color: 'var(--text-2)' }}
           onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text-1)')}
