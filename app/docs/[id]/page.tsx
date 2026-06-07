@@ -56,7 +56,7 @@ function parseMarkdown(text: string): string {
 export default function DocPage() {
   const { id } = useParams<{ id: string }>();
   const [doc, setDoc] = useState<Doc | null | undefined>(undefined);
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const [mode, setMode] = useState<'edit' | 'preview'>('preview');
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -131,7 +131,7 @@ export default function DocPage() {
           ref={bodyRef}
           value={doc.body}
           onChange={(e) => handleChange('body', e.target.value)}
-          placeholder={'Start writing…\n\n# Heading\n**bold**  *italic*\n- bullet item'}
+          placeholder="Start writing…"
           className="flex-1 text-gray-700 text-base leading-relaxed bg-transparent border-none outline-none resize-none placeholder-gray-300 font-mono text-sm"
         />
       ) : (
