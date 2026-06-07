@@ -23,18 +23,16 @@ export default function Sidebar() {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [query, setQuery] = useState('');
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'light';
+    return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+  });
 
   useEffect(() => {
     function refresh() { setDocs(getDocuments()); }
     refresh();
     window.addEventListener('docs-updated', refresh);
     return () => window.removeEventListener('docs-updated', refresh);
-  }, []);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'dark') setTheme('dark');
   }, []);
 
   function toggleTheme() {
