@@ -25,6 +25,9 @@
   /* Accent */
   --accent: #007AFF;
 
+  /* Primary action button (black in light, blue in dark) */
+  --btn-primary: #000000;
+
   /* Active sidebar left-border */
   --active-bar: #007AFF;
 
@@ -53,6 +56,9 @@
   --text-3: #636366;
 
   --accent: #0A84FF;
+
+  /* Primary action button */
+  --btn-primary: #0A84FF;
 
   --active-bar: #0A84FF;
 

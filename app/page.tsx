@@ -17,7 +17,7 @@ export default function Home() {
         <Link
           href="/docs"
           className="mt-8 inline-block text-[13px] font-medium px-6 py-3 rounded-[4px] text-white hover:opacity-90 transition-opacity"
-          style={{ backgroundColor: 'var(--accent)' }}
+          style={{ backgroundColor: 'var(--btn-primary)' }}
         >
           Open workspace →
         </Link>

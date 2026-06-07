@@ -400,7 +400,7 @@ export default function Sidebar() {
         <button
           onClick={handleNew}
           className="w-full text-[13px] font-medium text-white rounded-[4px] px-3 py-1.5 mb-1.5 hover:opacity-90 transition-opacity"
-          style={{ backgroundColor: 'var(--accent)' }}
+          style={{ backgroundColor: 'var(--btn-primary)' }}
         >
           + New document
         </button>
