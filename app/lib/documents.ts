@@ -4,6 +4,7 @@ export interface Doc {
   body: string;
   createdAt: string;
   updatedAt: string;
+  starred?: boolean;
 }
 
 const STORAGE_KEY = 'doc_manager_documents';
@@ -28,6 +29,7 @@ export function createDocument(): Doc {
     body: '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    starred: false,
   };
   saveDocuments([doc, ...getDocuments()]);
   return doc;
@@ -44,6 +46,14 @@ export function updateDocument(
   saveDocuments(
     getDocuments().map((d) =>
       d.id === id ? { ...d, ...changes, updatedAt: new Date().toISOString() } : d
+    )
+  );
+}
+
+export function toggleStar(id: string): void {
+  saveDocuments(
+    getDocuments().map((d) =>
+      d.id === id ? { ...d, starred: !d.starred } : d
     )
   );
 }

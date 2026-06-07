@@ -51,6 +51,10 @@ function parseMarkdown(text: string): string {
   if (inList) out.push('</ul>');
   return out.join('');
 }
+
+function wordCount(text: string): number {
+  return text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
+}
 // ────────────────────────────────────────────────────────────────────────────
 
 export default function DocPage() {
@@ -90,11 +94,11 @@ export default function DocPage() {
   if (doc === null) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
-        <p className="text-gray-900 font-medium">Document not found</p>
-        <p className="text-sm text-gray-400">
+        <p className="text-gray-900 dark:text-gray-100 font-medium">Document not found</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">
           This document may have been deleted or the link is incorrect.
         </p>
-        <Link href="/docs" className="text-sm text-blue-600 hover:underline mt-1">
+        <Link href="/docs" className="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-1">
           ← Back to workspace
         </Link>
       </div>
@@ -105,14 +109,14 @@ export default function DocPage() {
     <div className="flex flex-col h-full px-6 md:px-10 py-8 max-w-3xl mx-auto w-full">
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-6">
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-gray-400 dark:text-gray-500">
           {mode === 'edit'
             ? 'Tip: # Heading · **bold** · *italic* · - list'
             : 'Preview mode — click Edit to make changes'}
         </span>
         <button
           onClick={() => setMode(mode === 'edit' ? 'preview' : 'edit')}
-          className="text-xs font-medium px-3 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+          className="text-xs font-medium px-3 py-1 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
         >
           {mode === 'edit' ? 'Preview' : 'Edit'}
         </button>
@@ -126,27 +130,32 @@ export default function DocPage() {
           onChange={(e) => handleChange('title', e.target.value)}
           onKeyDown={handleTitleKeyDown}
           placeholder="Untitled"
-          className="text-2xl font-bold text-gray-900 bg-transparent border-none outline-none w-full mb-6 placeholder-gray-300"
+          className="text-2xl font-bold text-gray-900 dark:text-gray-100 bg-transparent border-none outline-none w-full mb-6 placeholder-gray-300 dark:placeholder-gray-600"
         />
       ) : (
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">
-          {doc.title || <span className="text-gray-300">Untitled</span>}
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">
+          {doc.title || <span className="text-gray-300 dark:text-gray-600">Untitled</span>}
         </h1>
       )}
 
       {/* Body — edit or preview */}
       {mode === 'edit' ? (
-        <textarea
-          ref={bodyRef}
-          value={doc.body}
-          onChange={(e) => handleChange('body', e.target.value)}
-          placeholder="Start writing…"
-          className="flex-1 text-gray-700 text-base leading-relaxed bg-transparent border-none outline-none resize-none placeholder-gray-300 font-mono text-sm"
-        />
+        <>
+          <textarea
+            ref={bodyRef}
+            value={doc.body}
+            onChange={(e) => handleChange('body', e.target.value)}
+            placeholder="Start writing…"
+            className="flex-1 text-gray-700 dark:text-gray-300 text-base leading-relaxed bg-transparent border-none outline-none resize-none placeholder-gray-300 dark:placeholder-gray-600 font-mono text-sm"
+          />
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 select-none">
+            {wordCount(doc.body)} {wordCount(doc.body) === 1 ? 'word' : 'words'}
+          </p>
+        </>
       ) : (
         <div
-          className="doc-preview flex-1 overflow-auto"
-          dangerouslySetInnerHTML={{ __html: parseMarkdown(doc.body) || '<p class="text-gray-300">Nothing to preview yet.</p>' }}
+          className="doc-preview flex-1 overflow-auto dark:text-gray-200"
+          dangerouslySetInnerHTML={{ __html: parseMarkdown(doc.body) || '<p class="text-gray-300 dark:text-gray-600">Nothing to preview yet.</p>' }}
         />
       )}
     </div>
