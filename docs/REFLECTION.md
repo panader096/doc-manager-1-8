@@ -1,106 +1,27 @@
-# Persistence Decision — REFLECTION.md
+# REFLECTION.md
 
-## Decision
-**Use `localStorage` for all document persistence.**
+## Persistence
 
-## Constraints
-- Single user, single browser, single machine
-- No backend, no database, no cloud storage
-- App runs on localhost only — nothing hosted or shared
+At the start of the sprint I asked Claude Code what storage mechanism to use for a single-user, localhost-only app with no backend. It recommended `localStorage` immediately: the 5 MB limit comfortably covers plain-text documents, the synchronous read/write API keeps the data layer simple, and there are no relational queries that a database would make easier. It surfaced four alternatives — `IndexedDB` (async, better for binary or large structured data), `sessionStorage` (clears on tab close), cookies (4 KB limit, designed for server communication), and the File System Access API (requires a permission prompt each session, patchy browser support). I chose `localStorage` because every constraint pointed the same way: small text data, no server, no async needed, and the pattern was already familiar from the to-do app earlier in the sprint.
 
-## Options considered
+## Search → paste → cite
 
-| Option | Verdict |
-|---|---|
-| `localStorage` | ✅ Selected |
-| `IndexedDB` | Overkill for this scale |
-| `sessionStorage` | Ruled out — data clears on tab close |
-| Cookies | Ruled out — 4KB limit, designed for servers |
-| File System Access API | Ruled out — requires user permission per session, poor browser support |
+While setting up routing for individual document pages, I pasted the Next.js App Router documentation on layouts and pages — the file saved in `docs/nextjs-layouts-and-pages.md` (source: `https://nextjs.org/docs/app/getting-started/layouts-and-pages`). Without it, the agent was drifting toward a Pages Router mental model, reaching for `getServerSideProps` to handle route parameters. Once I pasted the App Router reference, it correctly used `useParams()` from `next/navigation` for the dynamic `[id]` segment and `useSearchParams()` for the `?new=1` flag that opens a fresh document in edit mode. The citation changed both the hook choices and the resulting file structure.
 
-## Reasoning
+## CLAUDE.md catching a drift
 
-`localStorage` was selected because every constraint points toward simplicity:
+When building the drag-and-drop folder feature (branch `1.8.8-hard`), the agent's first instinct was to suggest a third-party library. The CLAUDE.md rule — "Do not add npm packages without asking first" — intercepted this before any install. The feature was instead built with the HTML5 native Drag and Drop API: `draggable`, `onDragStart`, `onDragOver`, and `onDrop`. No new dependency was added and the behaviour matched the spec exactly.
 
-- **Scale** — personal text documents will stay well within the ~5MB browser limit
-- **Complexity** — no async/await needed; reads and writes are synchronous and straightforward
-- **Queries** — filtering and sorting can be done in JavaScript; no database-level querying is needed
-- **Familiarity** — the same pattern used in the to-do app (Sprint 1/1.5), so there is no new API to learn
-- **Debuggability** — localStorage is inspectable directly in browser DevTools
+## Design pass
 
-`IndexedDB` would be the right choice if the app were expected to handle hundreds of large documents or binary attachments. Neither applies here, so the added complexity buys nothing.
+I described the visual direction as Apple's pro-application aesthetic — Xcode and Final Cut Pro, not the marketing website. Instructions covered typography (system font stack, monospace for metadata and timestamps), spacing (28 px sidebar rows, 32 px content padding, dense layout), colour (near-black `#1E1E1E` dark background, `#F2F2F2` light sidebar, `#007AFF` accent), and components (4 px radius everywhere, 2 px left-border active indicator, neutral tag pills). The scaffolded default was Geist font with generous padding and coloured pill tags. Three options were presented; Option C was chosen. The iteration that finally felt right was when the font switched to the native system stack — the app stopped looking like a web project and started feeling like a local tool.
 
-## Data model (planned)
-Documents will be stored as a JSON-serialised array under a single key (e.g. `doc_manager_documents`). Each document object will contain at minimum:
-- `id` — unique identifier (used in the URL `/docs/[id]`)
-- `title` — document title
-- `body` — document content
-- `createdAt` — ISO timestamp
-- `updatedAt` — ISO timestamp
+## Harder than expected
 
----
+Nothing in the implementation was harder than expected compared to the plain-HTML sprint. The main friction was waiting time — each Claude Code prompt took noticeably longer to process than a typical static-site iteration, which slowed the feedback loop considerably.
 
-# UI Design Decision — Sprint 1.8.9
+## docs/ folder: keep or change
 
-## Selected Design: Option C — "Apple Pro"
+Keep: starting each feature with a round of clarifying questions before building. This scoped the output, reduced re-dos, and produced more predictable results. Also keep: a separate named branch per feature step with descriptive naming — the version history made comparison and rollback straightforward.
 
-Implemented on branch `1.8.9-ui-design`.
-
-### Rationale for selection
-
-Three design directions were considered, all Apple-inspired. Option C was selected because:
-
-1. **Excellent dark theme** — the Xcode/Final Cut Pro colour palette (`#1E1E1E` background, `#252525` sidebar) is purpose-built for long writing sessions with minimal eye strain. The dark theme was broken in previous branches; Option C's CSS variable strategy fixed it definitively.
-2. **Low implementation effort** — Option C uses CSS custom properties as the single source of truth for all colour tokens. No per-component `dark:` Tailwind classes are needed. When `.dark` is added to `<html>`, every element updates automatically via variable cascade.
-3. **Personal preference** — the dense, professional aesthetic of Apple's pro applications (Xcode, Final Cut Pro, Logic Pro) matches the user's taste.
-
-### Design tokens
-
-| Token | Light | Dark |
-|---|---|---|
-| App background | `#FFFFFF` | `#1E1E1E` |
-| Sidebar | `#F2F2F2` | `#252525` |
-| Active item | `#E3E3E3` | `#2E2E2E` |
-| Hover | `#EBEBEB` | `#2A2A2A` |
-| Modal / Input | `#FFFFFF` | `#2C2C2C` |
-| Border | `#D1D1D6` | `#3A3A3A` |
-| Focus border | `#007AFF` | `#0A84FF` |
-| Text primary | `#1D1D1F` | `#E8E8ED` |
-| Text secondary | `#6C6C70` | `#8E8E93` |
-| Text muted | `#AEAEB2` | `#636366` |
-| Accent | `#007AFF` | `#0A84FF` |
-| Active left bar | `#007AFF` | `#0A84FF` |
-| Tag background | `#F0F0F0` | `#2C2C2C` |
-| Tag text | `#3A3A3C` | `#8E8E93` |
-| Tag border | `#C7C7CC` | `#3D3D3D` |
-
-### Typography
-
-- **Body font**: `-apple-system, BlinkMacSystemFont, "SF Pro Text", ui-sans-serif, system-ui, sans-serif` — uses the native system font on every platform; renders as SF Pro on macOS/iOS, Segoe UI on Windows, Roboto on Android.
-- **Monospace** (timestamps, tags, word count, document body): system mono stack; `"SF Mono"` on Apple, falling back to `Menlo`, `Monaco`, `Consolas`.
-- **Scale**: sidebar items 12–13 px; section headers 11 px all-caps with letter-spacing; document title 22 px / weight 700; toolbar hints 12 px.
-- No external font packages. Geist (previously imported from Google Fonts) was removed in favour of the system stack.
-
-### Spacing and density
-
-- Sidebar items: approximately 28 px tall (`py-[7px]` + content height)
-- Horizontal padding: `px-2.5` (10 px) on list items
-- Section headers: `px-2.5 py-1.5`
-- Content area: `px-8 py-8` (32 px), `max-w-[800px]`
-- Minimal whitespace between elements — consistent with professional app aesthetics rather than marketing-page spaciousness
-
-### Component shape
-
-- Border radius: `4px` on all interactive elements (inputs, buttons, tag pills, list items)
-- Modals: `8px` radius
-- Command palette card: `6px` radius
-- Buttons: text-only with hover tint; no heavy borders or fills except primary action (accent-coloured "New document" button)
-- Active sidebar item: 2 px left border in accent colour + subtle `bg-active` fill
-
-### Dark mode implementation
-
-The root cause of the broken dark mode in previous branches: `body { background: var(--background) }` in `globals.css` is an unlayered CSS rule. In the CSS cascade, unlayered rules always beat `@layer utilities` (where Tailwind classes live), so `dark:bg-gray-950` on `<body>` was always overridden.
-
-**Fix**: replaced all per-component `dark:` class pairs with a single set of CSS custom properties. `:root` defines the light values; `.dark` overrides them. Components reference `var(--bg-sidebar)` etc. directly via inline `style={{ }}`. When the theme toggle sets `.dark` on `<html>`, every CSS variable updates instantly — no Tailwind dark variant needed.
-
-The `suppressHydrationWarning` attribute on `<html>` and the `next/script` FOUC-prevention script (strategy `beforeInteractive`) remain in place to avoid a flash of light theme on page load when the user has selected dark mode.
+Change next time: document the clarifying-questions exchange itself, not just the outcome. A log of what was asked and how ambiguities were resolved would be more instructive than a reference document the model can retrieve on its own.
