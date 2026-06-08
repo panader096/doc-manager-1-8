@@ -4,6 +4,10 @@ A personal document management app built as part of the Turing College "Building
 
 Single-user, browser-only workspace. No backend, no accounts — all data stored in `localStorage`.
 
+## Screenshot
+
+![Document Manager workspace](docs/screenshot.png)
+
 ## Running locally
 
 ```bash
