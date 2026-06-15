@@ -1,5 +1,13 @@
 # Document Manager
 
+<!-- 
+This app is a browser-based document management workspace where users can create, 
+edit, delete, and organize documents. It features real-time search, markdown preview, 
+tagging, document history, a command palette for quick actions, and organized folder 
+structure — all without requiring a backend server. Data persists in the browser 
+using localStorage, making it a true single-user offline-capable workspace.
+-->
+
 A personal document management app built as part of the Turing College "Building with AI / Claude Code" course (Sprint 1.8).
 
 Single-user, browser-only workspace. No backend, no accounts — all data stored in `localStorage`.
