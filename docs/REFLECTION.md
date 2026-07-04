@@ -60,6 +60,14 @@ Collection sharing turned into a lesson about this app's threat model rather tha
 
 Search history was the smallest feature by code size but had the most explicit behavioural decisions: save on Enter/blur rather than every keystroke (so partial words typed while thinking don't clutter the list), and upsert-by-query-text so repeating a search bumps it to the front instead of creating a duplicate entry.
 
+## A genuine fresh-session PR review
+
+After the "Review 1" audit found that nothing had ever actually been pushed to GitHub, I asked Claude Code to close that gap for real rather than just note it: it pushed the six local feature branches' worth of history and opened [PR #6](https://github.com/panader096/doc-manager-1-8/pull/6) for the Styling tier (bold collection headers, drag-to-reorder collections, the dark/light toggle) against a freshly-synced `main`, then ran the built-in `/code-review` skill — not the project's own self-authored `claude-md-review` — against that PR's actual diff.
+
+The review ran as six parallel angles (line-by-line scan, removed-behavior audit, cross-file tracer, reuse, simplification/efficiency, altitude/conventions) with no memory of how or why the feature was built, which is what made it useful: four of the six angles independently converged on the same bug. `reorderCollections()` in `db.ts` never checks the `{error}` each row update can return — every other write function in the file does — and its call site fires it without `await` or `.catch`. Combined with doing N separate round-trips per drag instead of one batched `upsert`, a failed request for any one collection silently leaves the database's order out of sync with what the UI just showed, with nothing surfaced to explain why on the next reload. A second, independently-noticed finding: the entire dark/light toggle (state init, toggle function, and button JSX) is copy-pasted verbatim between `NotesSidebar.tsx` and `Sidebar.tsx` instead of a shared hook — and had already drifted, since the notes-sidebar copy dropped the hover-color handlers the docs-sidebar one still has.
+
+No CLAUDE.md convention violations were found in the diff itself — the interface→migration→function→UI order was followed and every call still routes through `db.ts`. The bug is real but scoped (a drag-reorder edge case, not core CRUD), so the PR was still merged; the fix is a follow-up, not a blocker.
+
 ## docs/ folder: keep or change
 
 Keep: starting each feature with a round of clarifying questions before building. This scoped the output, reduced re-dos, and produced more predictable results. Also keep: a separate named branch per feature step with descriptive naming — the version history made comparison and rollback straightforward.
