@@ -16,6 +16,7 @@ export type Collection = {
   name: string
   created_at: string
   share_token: string | null
+  position: number
 }
 
 export type NoteListItem = {
@@ -189,23 +190,24 @@ export async function unarchiveNote(id: number): Promise<void> {
   if (error) throw error
 }
 
-const COLLECTION_SELECT = 'id, name, created_at, share_token'
+const COLLECTION_SELECT = 'id, name, created_at, share_token, position'
 
 export async function getCollections(): Promise<Collection[]> {
   const supabase = createClient()
   const { data, error } = await supabase
     .from('collections')
     .select(COLLECTION_SELECT)
+    .order('position', { ascending: true })
     .order('name', { ascending: true })
   if (error) throw error
   return data
 }
 
-export async function createCollection(name: string): Promise<Collection> {
+export async function createCollection(name: string, position: number): Promise<Collection> {
   const supabase = createClient()
   const { data, error } = await supabase
     .from('collections')
-    .insert({ name })
+    .insert({ name, position })
     .select(COLLECTION_SELECT)
     .single()
   if (error) throw error
@@ -216,6 +218,13 @@ export async function renameCollection(id: number, name: string): Promise<void> 
   const supabase = createClient()
   const { error } = await supabase.from('collections').update({ name }).eq('id', id)
   if (error) throw error
+}
+
+export async function reorderCollections(orderedIds: number[]): Promise<void> {
+  const supabase = createClient()
+  await Promise.all(
+    orderedIds.map((id, index) => supabase.from('collections').update({ position: index }).eq('id', id)),
+  )
 }
 
 export async function generateShareLink(collectionId: number): Promise<string> {

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import {
   getNotes, createNote, deleteNote,
-  getCollections, createCollection, renameCollection,
+  getCollections, createCollection, renameCollection, reorderCollections,
   setNoteCollection, setNotePinned, archiveNote, unarchiveNote,
   searchNotes, getSearchHistory, recordSearch,
   generateShareLink, revokeShareLink,
@@ -41,6 +41,10 @@ export default function NotesSidebar() {
   const [searchFocused, setSearchFocused] = useState(false)
   const [shareCollection, setShareCollection] = useState<Collection | null>(null)
   const [copied, setCopied] = useState(false)
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'light'
+    return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
+  })
   const newCollectionInputRef = useRef<HTMLInputElement>(null)
   const editingNameInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
@@ -187,8 +191,23 @@ export default function NotesSidebar() {
     await unarchiveNote(id)
   }
 
-  function handleDropNote(e: React.DragEvent, targetCollectionId: number | null) {
+  function handleDropOnGroup(e: React.DragEvent, targetCollectionId: number | null) {
     e.preventDefault()
+    const draggedCollectionId = e.dataTransfer.getData('collectionId')
+    if (draggedCollectionId && targetCollectionId != null) {
+      const draggedId = Number(draggedCollectionId)
+      if (draggedId !== targetCollectionId) {
+        const reordered = collections.filter(c => c.id !== draggedId)
+        const targetIndex = reordered.findIndex(c => c.id === targetCollectionId)
+        const dragged = collections.find(c => c.id === draggedId)!
+        reordered.splice(targetIndex, 0, dragged)
+        setCollections(reordered)
+        reorderCollections(reordered.map(c => c.id))
+      }
+      setDragOverTarget(null)
+      return
+    }
+
     const noteId = e.dataTransfer.getData('noteId')
     if (noteId) {
       setNotes(prev => prev.map(n => (n.id === Number(noteId) ? { ...n, collection_id: targetCollectionId } : n)))
@@ -199,10 +218,18 @@ export default function NotesSidebar() {
 
   async function handleCreateCollection() {
     if (!newCollectionName.trim()) return
-    const collection = await createCollection(newCollectionName.trim())
-    setCollections(prev => [...prev, collection].sort((a, b) => a.name.localeCompare(b.name)))
+    const nextPosition = collections.length === 0 ? 0 : Math.max(...collections.map(c => c.position)) + 1
+    const collection = await createCollection(newCollectionName.trim(), nextPosition)
+    setCollections(prev => [...prev, collection])
     setNewCollectionName('')
     setNewCollectionMode(false)
+  }
+
+  function toggleTheme() {
+    const next = theme === 'light' ? 'dark' : 'light'
+    setTheme(next)
+    localStorage.setItem('theme', next)
+    document.documentElement.classList.toggle('dark', next === 'dark')
   }
 
   function cancelNewCollection() {
@@ -366,14 +393,19 @@ export default function NotesSidebar() {
         ) : (
           <div
             className="flex items-center px-3 py-1.5"
+            draggable={collection != null}
+            onDragStart={e => { if (collection != null) e.dataTransfer.setData('collectionId', String(collection.id)) }}
+            onDragEnd={() => setDragOverTarget(null)}
             style={{ backgroundColor: dragOverTarget === key ? 'rgba(0,122,255,0.08)' : undefined }}
             onDragOver={e => { e.preventDefault(); setDragOverTarget(key) }}
             onDragLeave={() => setDragOverTarget(null)}
-            onDrop={e => handleDropNote(e, collection?.id ?? null)}
+            onDrop={e => handleDropOnGroup(e, collection?.id ?? null)}
           >
             <button
               onClick={() => toggleCollapse(key)}
-              className="flex-1 min-w-0 flex items-center gap-1 text-left text-[11px] font-semibold uppercase tracking-wider transition-colors"
+              className={`flex-1 min-w-0 flex items-center gap-1 text-left text-[11px] uppercase tracking-wider transition-colors ${
+                collection != null ? 'font-bold' : 'font-semibold'
+              }`}
               style={{ color: 'var(--text-2)' }}
             >
               <span className="text-[10px] font-normal">{isCollapsed ? '▸' : '▾'}</span>
@@ -662,6 +694,17 @@ export default function NotesSidebar() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="px-3 py-2.5" style={{ borderTop: '1px solid var(--border)' }}>
+        <button
+          onClick={toggleTheme}
+          suppressHydrationWarning
+          className="text-[12px] transition-colors"
+          style={{ color: 'var(--text-2)' }}
+        >
+          {theme === 'light' ? 'Dark' : 'Light'}
+        </button>
       </div>
     </aside>
   )
