@@ -222,9 +222,11 @@ export async function renameCollection(id: number, name: string): Promise<void> 
 
 export async function reorderCollections(orderedIds: number[]): Promise<void> {
   const supabase = createClient()
-  await Promise.all(
+  const results = await Promise.all(
     orderedIds.map((id, index) => supabase.from('collections').update({ position: index }).eq('id', id)),
   )
+  const failed = results.find(r => r.error)
+  if (failed?.error) throw failed.error
 }
 
 export async function generateShareLink(collectionId: number): Promise<string> {

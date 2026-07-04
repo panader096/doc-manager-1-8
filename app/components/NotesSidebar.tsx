@@ -197,12 +197,15 @@ export default function NotesSidebar() {
     if (draggedCollectionId && targetCollectionId != null) {
       const draggedId = Number(draggedCollectionId)
       if (draggedId !== targetCollectionId) {
+        const previous = collections
         const reordered = collections.filter(c => c.id !== draggedId)
         const targetIndex = reordered.findIndex(c => c.id === targetCollectionId)
-        const dragged = collections.find(c => c.id === draggedId)!
-        reordered.splice(targetIndex, 0, dragged)
-        setCollections(reordered)
-        reorderCollections(reordered.map(c => c.id))
+        const dragged = collections.find(c => c.id === draggedId)
+        if (targetIndex !== -1 && dragged) {
+          reordered.splice(targetIndex, 0, dragged)
+          setCollections(reordered)
+          reorderCollections(reordered.map(c => c.id)).catch(() => setCollections(previous))
+        }
       }
       setDragOverTarget(null)
       return
