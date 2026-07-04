@@ -1,18 +1,18 @@
 import { createClient } from './supabase/client'
 
 export type NoteListItem = {
-  id: string
+  id: number
   title: string
   updated_at: string
 }
 
 export type Note = {
-  id: string
+  id: number
   title: string
   body: string
   created_at: string
   updated_at: string
-  collection_id: string | null
+  collection_id: number | null
 }
 
 export async function getNotes(): Promise<NoteListItem[]> {
@@ -43,7 +43,7 @@ export async function createNote(): Promise<NoteListItem> {
   const supabase = createClient()
   const { data, error } = await supabase
     .from('notes')
-    .insert({ title: '', body: '' })
+    .insert({ title: '', body: '', updated_at: new Date().toISOString() })
     .select('id, title, updated_at')
     .single()
   if (error) throw error
@@ -62,7 +62,7 @@ export async function updateNote(
   if (error) throw error
 }
 
-export async function deleteNote(id: string): Promise<void> {
+export async function deleteNote(id: number): Promise<void> {
   const supabase = createClient()
   const { error } = await supabase.from('notes').delete().eq('id', id)
   if (error) throw error

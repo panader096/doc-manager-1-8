@@ -18,7 +18,7 @@ function formatDate(iso: string): string {
 export default function NotesSidebar() {
   const [notes, setNotes] = useState<NoteListItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [hoveredId, setHoveredId] = useState<number | null>(null)
   const router = useRouter()
   const pathname = usePathname()
 
@@ -41,13 +41,13 @@ export default function NotesSidebar() {
     router.push(`/notes/${note.id}`)
   }
 
-  async function handleDelete(e: React.MouseEvent, id: string) {
+  async function handleDelete(e: React.MouseEvent, id: number) {
     e.stopPropagation()
     e.preventDefault()
     await deleteNote(id)
     const next = notes.filter(n => n.id !== id)
     setNotes(next)
-    if (activeId === id) {
+    if (activeId === String(id)) {
       router.push(next.length > 0 ? `/notes/${next[0].id}` : '/notes')
     }
   }
@@ -88,7 +88,7 @@ export default function NotesSidebar() {
           </p>
         ) : (
           notes.map(note => {
-            const isActive = note.id === activeId
+            const isActive = String(note.id) === activeId
             return (
               <div
                 key={note.id}

@@ -20,6 +20,12 @@ I described the visual direction as Apple's pro-application aesthetic — Xcode 
 
 Nothing in the implementation was harder than expected compared to the plain-HTML sprint. The main friction was waiting time — each Claude Code prompt took noticeably longer to process than a typical static-site iteration, which slowed the feedback loop considerably.
 
+## Validating instead of trusting a scaffold
+
+Before extending the notes feature, I asked Claude Code to validate a Supabase-backed notes scaffold that had already been built (list + editor CRUD, single `notes.ts` helper module) rather than take it on faith. Instead of screenshotting the UI, it hit the same Supabase REST endpoint the browser client uses directly with `curl`, which surfaced a blocking bug a visual check would have missed: Row Level Security had a `SELECT` policy but no `INSERT` policy, so the "+ New" button would have failed silently. It also caught two smaller issues by cross-checking the live schema against the TypeScript types — `notes.id` was declared as `string` but is actually an integer column, and `updated_at` wasn't being set on insert, which broke the "most recently updated" sort order because Postgres sorts `NULL` first in `DESC` order. The env file also turned out to be missing entirely from this project directory (it only existed in an unrelated scratch folder), which would have failed silently as a "can't reach Supabase" error with no obvious cause.
+
+Two of the fixes touched the live database directly — a new RLS policy migration and a data backfill (`updated_at = created_at` for three pre-existing rows) — and Claude Code asked for confirmation before applying either, since both were schema/data changes to a shared system rather than local file edits.
+
 ## docs/ folder: keep or change
 
 Keep: starting each feature with a round of clarifying questions before building. This scoped the output, reduced re-dos, and produced more predictable results. Also keep: a separate named branch per feature step with descriptive naming — the version history made comparison and rollback straightforward.
