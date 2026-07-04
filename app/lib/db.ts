@@ -15,6 +15,7 @@ export type Collection = {
   id: number
   name: string
   created_at: string
+  share_token: string | null
 }
 
 export type NoteListItem = {
@@ -72,14 +73,8 @@ function flattenTags(row: NoteRow): NoteTag[] {
 const NOTE_LIST_SELECT = 'id, title, body, updated_at, collection_id, pinned, archived_at, note_tags(tags(name, color))'
 const NOTE_SELECT = 'id, title, body, created_at, updated_at, collection_id, pinned, archived_at, note_tags(tags(name, color))'
 
-export async function getNotes(): Promise<NoteListItem[]> {
-  const supabase = createClient()
-  const { data, error } = await supabase
-    .from('notes')
-    .select(NOTE_LIST_SELECT)
-    .order('updated_at', { ascending: false })
-  if (error) throw error
-  return (data as NoteRow[]).map(row => ({
+function mapNoteRow(row: NoteRow): NoteListItem {
+  return {
     id: row.id,
     title: row.title,
     body: row.body,
@@ -88,7 +83,17 @@ export async function getNotes(): Promise<NoteListItem[]> {
     pinned: row.pinned,
     archived_at: row.archived_at,
     tags: flattenTags(row),
-  }))
+  }
+}
+
+export async function getNotes(): Promise<NoteListItem[]> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('notes')
+    .select(NOTE_LIST_SELECT)
+    .order('updated_at', { ascending: false })
+  if (error) throw error
+  return (data as NoteRow[]).map(mapNoteRow)
 }
 
 export async function getNote(id: string): Promise<Note | null> {
@@ -103,17 +108,26 @@ export async function getNote(id: string): Promise<Note | null> {
     throw error
   }
   const row = data as NoteRow
-  return {
-    id: row.id,
-    title: row.title,
-    body: row.body,
-    created_at: row.created_at!,
-    updated_at: row.updated_at,
-    collection_id: row.collection_id,
-    pinned: row.pinned,
-    archived_at: row.archived_at,
-    tags: flattenTags(row),
-  }
+  return { ...mapNoteRow(row), created_at: row.created_at! }
+}
+
+export async function searchNotes(query: string): Promise<Set<number>> {
+  const tsquery = query
+    .trim()
+    .split(/\s+/)
+    .map(word => word.replace(/[^a-zA-Z0-9]/g, ''))
+    .filter(Boolean)
+    .map(word => `${word}:*`)
+    .join(' & ')
+  if (!tsquery) return new Set()
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('notes')
+    .select('id')
+    .textSearch('search_vector', tsquery)
+  if (error) throw error
+  return new Set(data.map(row => row.id))
 }
 
 export async function createNote(): Promise<NoteListItem> {
@@ -175,11 +189,13 @@ export async function unarchiveNote(id: number): Promise<void> {
   if (error) throw error
 }
 
+const COLLECTION_SELECT = 'id, name, created_at, share_token'
+
 export async function getCollections(): Promise<Collection[]> {
   const supabase = createClient()
   const { data, error } = await supabase
     .from('collections')
-    .select('id, name, created_at')
+    .select(COLLECTION_SELECT)
     .order('name', { ascending: true })
   if (error) throw error
   return data
@@ -190,7 +206,7 @@ export async function createCollection(name: string): Promise<Collection> {
   const { data, error } = await supabase
     .from('collections')
     .insert({ name })
-    .select('id, name, created_at')
+    .select(COLLECTION_SELECT)
     .single()
   if (error) throw error
   return data
@@ -200,6 +216,43 @@ export async function renameCollection(id: number, name: string): Promise<void> 
   const supabase = createClient()
   const { error } = await supabase.from('collections').update({ name }).eq('id', id)
   if (error) throw error
+}
+
+export async function generateShareLink(collectionId: number): Promise<string> {
+  const token = crypto.randomUUID()
+  const supabase = createClient()
+  const { error } = await supabase.from('collections').update({ share_token: token }).eq('id', collectionId)
+  if (error) throw error
+  return token
+}
+
+export async function revokeShareLink(collectionId: number): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase.from('collections').update({ share_token: null }).eq('id', collectionId)
+  if (error) throw error
+}
+
+export async function getSharedCollection(
+  token: string,
+): Promise<{ collection: Collection; notes: NoteListItem[] } | null> {
+  const supabase = createClient()
+  const { data: collection, error: collectionError } = await supabase
+    .from('collections')
+    .select(COLLECTION_SELECT)
+    .eq('share_token', token)
+    .maybeSingle()
+  if (collectionError) throw collectionError
+  if (!collection) return null
+
+  const { data, error: notesError } = await supabase
+    .from('notes')
+    .select(NOTE_LIST_SELECT)
+    .eq('collection_id', collection.id)
+    .is('archived_at', null)
+    .order('updated_at', { ascending: false })
+  if (notesError) throw notesError
+
+  return { collection, notes: (data as NoteRow[]).map(mapNoteRow) }
 }
 
 async function getOrCreateTagId(name: string): Promise<number> {
@@ -237,4 +290,38 @@ export async function setNoteTags(id: string, tagNames: string[]): Promise<void>
     .from('note_tags')
     .insert(tagIds.map(tagId => ({ note_id: Number(id), tag_id: tagId })))
   if (insertError) throw insertError
+}
+
+export async function getSearchHistory(): Promise<string[]> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('search_history')
+    .select('query')
+    .order('searched_at', { ascending: false })
+    .limit(5)
+  if (error) throw error
+  return data.map(row => row.query)
+}
+
+export async function recordSearch(query: string): Promise<void> {
+  const trimmed = query.trim()
+  if (!trimmed) return
+
+  const supabase = createClient()
+  const { error: upsertError } = await supabase
+    .from('search_history')
+    .upsert({ query: trimmed, searched_at: new Date().toISOString() }, { onConflict: 'query' })
+  if (upsertError) throw upsertError
+
+  const { data, error: listError } = await supabase
+    .from('search_history')
+    .select('id')
+    .order('searched_at', { ascending: false })
+  if (listError) throw listError
+
+  const staleIds = data.slice(5).map(row => row.id)
+  if (staleIds.length > 0) {
+    const { error: deleteError } = await supabase.from('search_history').delete().in('id', staleIds)
+    if (deleteError) throw deleteError
+  }
 }

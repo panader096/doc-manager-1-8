@@ -6,6 +6,8 @@ import {
   getNotes, createNote, deleteNote,
   getCollections, createCollection, renameCollection,
   setNoteCollection, setNotePinned, archiveNote, unarchiveNote,
+  searchNotes, getSearchHistory, recordSearch,
+  generateShareLink, revokeShareLink,
   NoteListItem, Collection,
 } from '../lib/db'
 
@@ -34,6 +36,11 @@ export default function NotesSidebar() {
   const [hoveredGroup, setHoveredGroup] = useState<number | null>(null)
   const [editingCollectionId, setEditingCollectionId] = useState<number | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [matchingIds, setMatchingIds] = useState<Set<number> | null>(null)
+  const [searchHistory, setSearchHistory] = useState<string[]>([])
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [shareCollection, setShareCollection] = useState<Collection | null>(null)
+  const [copied, setCopied] = useState(false)
   const newCollectionInputRef = useRef<HTMLInputElement>(null)
   const editingNameInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
@@ -53,9 +60,26 @@ export default function NotesSidebar() {
 
   useEffect(() => {
     fetchAll()
+    getSearchHistory().then(setSearchHistory)
     window.addEventListener('notes-updated', fetchAll)
     return () => window.removeEventListener('notes-updated', fetchAll)
   }, [])
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setMatchingIds(null)
+      return
+    }
+    const timer = setTimeout(() => {
+      searchNotes(query).then(setMatchingIds)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  function commitSearch(searchedQuery: string) {
+    if (!searchedQuery.trim()) return
+    recordSearch(searchedQuery).then(() => getSearchHistory().then(setSearchHistory))
+  }
 
   useEffect(() => {
     if (newCollectionMode) newCollectionInputRef.current?.focus()
@@ -94,9 +118,7 @@ export default function NotesSidebar() {
   const sortedTagNames = Array.from(allTags.keys()).sort()
 
   const filteredNotes = activeNotes.filter(n => {
-    const q = !query ||
-      n.title.toLowerCase().includes(query.toLowerCase()) ||
-      n.body.toLowerCase().includes(query.toLowerCase())
+    const q = matchingIds === null || matchingIds.has(n.id)
     const t = activeTags.size === 0 || [...activeTags].every(tag => n.tags.some(nt => nt.name === tag))
     return q && t
   })
@@ -207,6 +229,28 @@ export default function NotesSidebar() {
   function cancelRenameCollection() {
     setEditingCollectionId(null)
     setEditingName('')
+  }
+
+  async function handleGenerateShareLink() {
+    if (!shareCollection) return
+    const token = await generateShareLink(shareCollection.id)
+    setShareCollection(prev => (prev ? { ...prev, share_token: token } : prev))
+    setCollections(prev => prev.map(c => (c.id === shareCollection.id ? { ...c, share_token: token } : c)))
+  }
+
+  async function handleRevokeShareLink() {
+    if (!shareCollection) return
+    await revokeShareLink(shareCollection.id)
+    setShareCollection(prev => (prev ? { ...prev, share_token: null } : prev))
+    setCollections(prev => prev.map(c => (c.id === shareCollection.id ? { ...c, share_token: null } : c)))
+  }
+
+  function handleCopyShareLink() {
+    if (!shareCollection?.share_token) return
+    const url = `${window.location.origin}/shared/${shareCollection.share_token}`
+    navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   function renderNoteRow(note: NoteListItem) {
@@ -340,6 +384,17 @@ export default function NotesSidebar() {
             </button>
             {collection != null && hoveredGroup === collection.id && (
               <button
+                onClick={e => { e.stopPropagation(); setShareCollection(collection) }}
+                aria-label={`Share collection ${collection.name}`}
+                className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity text-[11px] mr-1.5"
+                style={{ color: 'var(--text-2)' }}
+                title="Share collection"
+              >
+                🔗
+              </button>
+            )}
+            {collection != null && hoveredGroup === collection.id && (
+              <button
                 onClick={e => startRenameCollection(e, collection)}
                 aria-label={`Rename collection ${collection.name}`}
                 className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity text-[11px]"
@@ -373,6 +428,67 @@ export default function NotesSidebar() {
         borderRight: '1px solid var(--border)',
       }}
     >
+      {shareCollection && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4"
+          onClick={() => setShareCollection(null)}
+        >
+          <div
+            className="rounded-[8px] border p-5 max-w-xs w-full"
+            style={{ backgroundColor: 'var(--bg-modal)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-modal)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="font-semibold text-[14px] mb-1" style={{ color: 'var(--text-1)' }}>
+              Share &ldquo;{shareCollection.name}&rdquo;
+            </p>
+            <p className="text-[12px] mb-3" style={{ color: 'var(--text-2)' }}>
+              Anyone with this link can view the notes in this collection without signing in.
+            </p>
+            {shareCollection.share_token ? (
+              <>
+                <div className="flex gap-1.5 mb-3">
+                  <input
+                    readOnly
+                    value={`${typeof window !== 'undefined' ? window.location.origin : ''}/shared/${shareCollection.share_token}`}
+                    className="flex-1 min-w-0 text-[12px] rounded-[4px] border px-2 py-1.5 outline-none"
+                    style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-1)' }}
+                    onFocus={e => e.currentTarget.select()}
+                  />
+                  <button
+                    onClick={handleCopyShareLink}
+                    className="text-[12px] font-medium rounded-[4px] px-2.5 hover:opacity-80 transition-opacity"
+                    style={{ backgroundColor: 'var(--text-1)', color: 'var(--bg-app)' }}
+                  >
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                <button
+                  onClick={handleRevokeShareLink}
+                  className="text-[12px] text-red-500 hover:underline"
+                >
+                  Unshare
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleGenerateShareLink}
+                className="w-full text-[13px] font-medium rounded-[4px] px-3 py-2 hover:opacity-90 transition-opacity"
+                style={{ backgroundColor: 'var(--btn-primary)', color: '#fff' }}
+              >
+                Generate share link
+              </button>
+            )}
+            <button
+              onClick={() => setShareCollection(null)}
+              className="w-full text-[12px] text-center pt-3 transition-colors"
+              style={{ color: 'var(--text-2)' }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="px-3 pt-3 pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-semibold tracking-widest uppercase" style={{ color: 'var(--text-3)' }}>
@@ -429,15 +545,35 @@ export default function NotesSidebar() {
         )}
       </div>
 
-      <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="relative px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <input
           type="search"
           placeholder="Search notes…"
           value={query}
           onChange={e => setQuery(e.target.value)}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => { setSearchFocused(false); commitSearch(query) }}
+          onKeyDown={e => { if (e.key === 'Enter') commitSearch(query) }}
           className="w-full text-[13px] rounded-[4px] border px-2.5 py-1.5 outline-none"
           style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-1)' }}
         />
+        {searchFocused && searchHistory.length > 0 && (
+          <div
+            className="absolute left-3 right-3 mt-1 rounded-[4px] border overflow-hidden z-10"
+            style={{ backgroundColor: 'var(--bg-modal)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-modal)' }}
+          >
+            {searchHistory.map(entry => (
+              <button
+                key={entry}
+                onMouseDown={() => setQuery(entry)}
+                className="w-full text-left text-[12px] px-2.5 py-1.5 truncate transition-colors"
+                style={{ color: 'var(--text-2)' }}
+              >
+                {entry}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {sortedTagNames.length > 0 && (
