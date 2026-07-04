@@ -3,6 +3,12 @@ import { createClient } from './supabase/client'
 export type Tag = {
   id: number
   name: string
+  color: string
+}
+
+export type NoteTag = {
+  name: string
+  color: string
 }
 
 export type Collection = {
@@ -17,7 +23,7 @@ export type NoteListItem = {
   body: string
   updated_at: string
   collection_id: number | null
-  tags: string[]
+  tags: NoteTag[]
 }
 
 export type Note = {
@@ -27,10 +33,18 @@ export type Note = {
   created_at: string
   updated_at: string
   collection_id: number | null
-  tags: string[]
+  tags: NoteTag[]
 }
 
-type NoteTagsRow = { tags: { name: string }[] | { name: string } | null }
+const TAG_PALETTE = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#0ea5e9', '#8b5cf6', '#ec4899', '#64748b']
+
+function colorForTagName(name: string): string {
+  let hash = 0
+  for (const char of name.toLowerCase()) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  return TAG_PALETTE[hash % TAG_PALETTE.length]
+}
+
+type NoteTagsRow = { tags: NoteTag[] | NoteTag | null }
 type NoteRow = {
   id: number
   title: string
@@ -41,16 +55,16 @@ type NoteRow = {
   note_tags: NoteTagsRow[]
 }
 
-function flattenTags(row: NoteRow): string[] {
+function flattenTags(row: NoteRow): NoteTag[] {
   return row.note_tags.flatMap(nt => {
     const tags = nt.tags
     if (!tags) return []
-    return Array.isArray(tags) ? tags.map(t => t.name) : [tags.name]
+    return Array.isArray(tags) ? tags : [tags]
   })
 }
 
-const NOTE_LIST_SELECT = 'id, title, body, updated_at, collection_id, note_tags(tags(name))'
-const NOTE_SELECT = 'id, title, body, created_at, updated_at, collection_id, note_tags(tags(name))'
+const NOTE_LIST_SELECT = 'id, title, body, updated_at, collection_id, note_tags(tags(name, color))'
+const NOTE_SELECT = 'id, title, body, created_at, updated_at, collection_id, note_tags(tags(name, color))'
 
 export async function getNotes(): Promise<NoteListItem[]> {
   const supabase = createClient()
@@ -151,6 +165,12 @@ export async function createCollection(name: string): Promise<Collection> {
   return data
 }
 
+export async function renameCollection(id: number, name: string): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase.from('collections').update({ name }).eq('id', id)
+  if (error) throw error
+}
+
 async function getOrCreateTagId(name: string): Promise<number> {
   const supabase = createClient()
   const { data: existing, error: lookupError } = await supabase
@@ -164,7 +184,7 @@ async function getOrCreateTagId(name: string): Promise<number> {
 
   const { data: created, error: insertError } = await supabase
     .from('tags')
-    .insert({ name })
+    .insert({ name, color: colorForTagName(name) })
     .select('id')
     .single()
   if (insertError) throw insertError

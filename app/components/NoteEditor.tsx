@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { getNote, updateNote, getCollections, setNoteCollection, setNoteTags, Collection } from '../lib/db'
+import { getNote, updateNote, getCollections, setNoteCollection, setNoteTags, Collection, NoteTag } from '../lib/db'
 
 type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
 
@@ -17,7 +17,7 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [collectionId, setCollectionId] = useState<number | null>(null)
-  const [tags, setTags] = useState<string[]>([])
+  const [tags, setTags] = useState<NoteTag[]>([])
   const [collections, setCollections] = useState<Collection[]>([])
   const [status, setStatus] = useState<SaveStatus>('idle')
   const [loading, setLoading] = useState(true)
@@ -68,26 +68,28 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
     window.dispatchEvent(new Event('notes-updated'))
   }
 
+  async function applyTagChange(newTagNames: string[]) {
+    await setNoteTags(noteId, newTagNames)
+    const refreshed = await getNote(noteId)
+    if (refreshed) setTags(refreshed.tags)
+    window.dispatchEvent(new Event('notes-updated'))
+  }
+
   async function handleTagInput(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter' && e.key !== ',') return
     e.preventDefault()
     const input = tagInputRef.current
     if (!input) return
     const value = input.value.trim().replace(/,/g, '')
-    if (value && !tags.includes(value)) {
-      const newTags = [...tags, value]
-      setTags(newTags)
-      await setNoteTags(noteId, newTags)
-      window.dispatchEvent(new Event('notes-updated'))
+    const tagNames = tags.map(t => t.name)
+    if (value && !tagNames.includes(value)) {
+      await applyTagChange([...tagNames, value])
     }
     input.value = ''
   }
 
-  async function removeTag(tag: string) {
-    const newTags = tags.filter(t => t !== tag)
-    setTags(newTags)
-    await setNoteTags(noteId, newTags)
-    window.dispatchEvent(new Event('notes-updated'))
+  async function removeTag(tagName: string) {
+    await applyTagChange(tags.map(t => t.name).filter(name => name !== tagName))
   }
 
   if (loading) {
@@ -138,7 +140,7 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
         <div className="flex flex-wrap items-center gap-1">
           {tags.map(tag => (
             <span
-              key={tag}
+              key={tag.name}
               className="flex items-center gap-1 text-[11px] px-1.5 py-px rounded-[4px] border font-mono"
               style={{
                 backgroundColor: 'var(--tag-bg)',
@@ -146,10 +148,11 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
                 borderColor: 'var(--tag-border)',
               }}
             >
-              {tag}
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+              {tag.name}
               <button
-                onClick={() => removeTag(tag)}
-                aria-label={`Remove tag ${tag}`}
+                onClick={() => removeTag(tag.name)}
+                aria-label={`Remove tag ${tag.name}`}
                 className="opacity-60 hover:opacity-100 transition-opacity"
               >
                 ×

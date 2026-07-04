@@ -26,6 +26,12 @@ Before extending the notes feature, I asked Claude Code to validate a Supabase-b
 
 Two of the fixes touched the live database directly — a new RLS policy migration and a data backfill (`updated_at = created_at` for three pre-existing rows) — and Claude Code asked for confirmation before applying either, since both were schema/data changes to a shared system rather than local file edits.
 
+## A custom rule-checking slash command
+
+`skill-creator` wasn't available in the session, so instead of a formal skill I asked Claude Code to write a plain custom slash command, `.claude/commands/claude-md-review.md`, that checks a diff against this project's specific CLAUDE.md rules rather than general code quality — is every database call going through `app/lib/db.ts`, do table/column references in code actually match `supabase/migrations/`, was a new dependency added without asking first. This is narrower than the built-in `/code-review` skill on purpose: it only knows about the handful of architectural rules this repo cares about.
+
+I ran it against the uncommitted working-tree diff for this branch (v2.5.3 — collection rename, tag colours, count badge) since nothing had been pushed as a real PR yet. Result: no violations — every new Supabase call went through `db.ts`, the new `tags.color` column and `collections`/`tags` table names matched the migration files, and no new npm packages were added. A clean result from a custom-scoped review tool is still useful to see recorded once, if only to confirm the tool itself works before trusting it on a diff that isn't clean.
+
 ## docs/ folder: keep or change
 
 Keep: starting each feature with a round of clarifying questions before building. This scoped the output, reduced re-dos, and produced more predictable results. Also keep: a separate named branch per feature step with descriptive naming — the version history made comparison and rollback straightforward.
