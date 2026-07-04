@@ -8,6 +8,7 @@ This repo now contains two apps sharing one Supabase project:
 
 - **Doc manager** (`/docs`) — the original personal document management app. Documents have a unique URL (e.g. `/docs/abc123`); data was originally localStorage-only and is being migrated to Supabase.
 - **Notes app** (`/notes`) — a Supabase-native notes app with collections, tags, search, pinning, archiving, and collection sharing via link. Built from scratch against Supabase; no localStorage involved.
+- **Workspace** (`/workspace`) — the only part of this app that requires signing in. A minimal placeholder area proving out Supabase Auth (email/password and Google). `/docs` and `/notes` remain fully public with no login required.
 
 ## User experience
 
@@ -38,6 +39,10 @@ Run `npm run dev`. The app runs at http://localhost:3000.
 - `/notes` — notes home (empty state / select-a-note prompt)
 - `/notes/[id]` — individual note, where `id` is the note's numeric `notes.id`
 - `/shared/[token]` — public, read-only view of a collection shared via `collections.share_token`; no sidebar, no auth
+- `/login` — sign in with email/password or Google
+- `/signup` — create an account with email/password
+- `/auth/callback` — OAuth callback route; exchanges the Google auth code for a session, then redirects to `/workspace`
+- `/workspace` — signed-in-only placeholder area; every page under it requires a session (see Authentication below)
 
 ## Credentials
 
@@ -67,14 +72,26 @@ A note belongs to at most one collection (`collection_id` is nullable — a note
 
 ### Supabase client wrappers
 
-Two thin wrappers own client creation — use the right one, never `createClient()` from `@supabase/ssr` directly:
+Three thin wrappers own client creation — use the right one, never `createClient()` from `@supabase/ssr` directly:
 
 | File | Use when |
 |---|---|
 | `app/lib/supabase/client.ts` | Client Components (`'use client'`) |
 | `app/lib/supabase/server.ts` | Server Components, Route Handlers, Server Actions |
+| `app/lib/supabase/middleware.ts` | Only `proxy.ts` at the project root — refreshes the session cookie on every request (Next.js renamed the `middleware.ts` convention to `proxy.ts`; the exported function is `proxy`, not `middleware`) |
 
 The server client must be created inside each function that needs it — never as a module-level singleton (required for Next.js Fluid compute compatibility).
+
+## Authentication
+
+**Rule for agent:** Every signed-in-only page must verify the user's session with the Supabase Auth server before it loads, and redirect to the sign-in page if the user is not signed in.
+
+- Use Supabase Auth for all sign-in and session handling — never build custom auth or store passwords yourself
+- Every page under `/workspace` requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in
+- After a successful sign-in, redirect to `/workspace`
+- After sign-out, redirect to `/login`. Do not rely on the browser-side session alone.
+
+Server-side session checks use `supabase.auth.getClaims()`, not `getUser()` or `getSession()` — Supabase's own docs are explicit that `getSession()` must never be trusted in server code, since it can be spoofed when cookie storage is shared with the client. All auth calls (sign up, sign in, sign in with Google, sign out) go through `app/lib/auth.ts` — the same single-source-of-truth convention as `documents.ts`/`db.ts`, just for auth instead of data.
 
 ## Conventions
 - New pages go inside `app/`
@@ -125,3 +142,12 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Search history (last 5, upsert + prune) | `getSearchHistory()` / `recordSearch()` in `db.ts` |
 | Collection sharing via read-only link | `generateShareLink()` / `revokeShareLink()` / `getSharedCollection()` in `db.ts`; `app/shared/[token]/page.tsx` |
 | Dark / light theme toggle | `NotesSidebar.tsx` — `toggleTheme()` (same `localStorage.theme` mechanism as the doc-manager) |
+
+### Authentication (`/workspace`)
+
+| Feature | Location |
+|---|---|
+| Email/password sign-up, sign-in, sign-out | `app/lib/auth.ts`; `app/login/page.tsx`, `app/signup/page.tsx` |
+| Google sign-in (OAuth/PKCE) | `signInWithGoogleAction()` in `auth.ts`; `app/auth/callback/route.ts` |
+| Session refresh on every request | `app/lib/supabase/middleware.ts`, wired up in root `proxy.ts` |
+| Server-side route protection for `/workspace` | `app/workspace/layout.tsx` — checks `getClaims()`, redirects to `/login` |
