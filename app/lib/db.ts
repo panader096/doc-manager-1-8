@@ -23,6 +23,8 @@ export type NoteListItem = {
   body: string
   updated_at: string
   collection_id: number | null
+  pinned: boolean
+  archived_at: string | null
   tags: NoteTag[]
 }
 
@@ -33,6 +35,8 @@ export type Note = {
   created_at: string
   updated_at: string
   collection_id: number | null
+  pinned: boolean
+  archived_at: string | null
   tags: NoteTag[]
 }
 
@@ -52,6 +56,8 @@ type NoteRow = {
   created_at?: string
   updated_at: string
   collection_id: number | null
+  pinned: boolean
+  archived_at: string | null
   note_tags: NoteTagsRow[]
 }
 
@@ -63,8 +69,8 @@ function flattenTags(row: NoteRow): NoteTag[] {
   })
 }
 
-const NOTE_LIST_SELECT = 'id, title, body, updated_at, collection_id, note_tags(tags(name, color))'
-const NOTE_SELECT = 'id, title, body, created_at, updated_at, collection_id, note_tags(tags(name, color))'
+const NOTE_LIST_SELECT = 'id, title, body, updated_at, collection_id, pinned, archived_at, note_tags(tags(name, color))'
+const NOTE_SELECT = 'id, title, body, created_at, updated_at, collection_id, pinned, archived_at, note_tags(tags(name, color))'
 
 export async function getNotes(): Promise<NoteListItem[]> {
   const supabase = createClient()
@@ -79,6 +85,8 @@ export async function getNotes(): Promise<NoteListItem[]> {
     body: row.body,
     updated_at: row.updated_at,
     collection_id: row.collection_id,
+    pinned: row.pinned,
+    archived_at: row.archived_at,
     tags: flattenTags(row),
   }))
 }
@@ -102,6 +110,8 @@ export async function getNote(id: string): Promise<Note | null> {
     created_at: row.created_at!,
     updated_at: row.updated_at,
     collection_id: row.collection_id,
+    pinned: row.pinned,
+    archived_at: row.archived_at,
     tags: flattenTags(row),
   }
 }
@@ -111,7 +121,7 @@ export async function createNote(): Promise<NoteListItem> {
   const { data, error } = await supabase
     .from('notes')
     .insert({ title: '', body: '', updated_at: new Date().toISOString() })
-    .select('id, title, body, updated_at, collection_id')
+    .select('id, title, body, updated_at, collection_id, pinned, archived_at')
     .single()
   if (error) throw error
   return { ...data, tags: [] }
@@ -141,6 +151,27 @@ export async function setNoteCollection(id: string, collectionId: number | null)
     .from('notes')
     .update({ collection_id: collectionId, updated_at: new Date().toISOString() })
     .eq('id', id)
+  if (error) throw error
+}
+
+export async function setNotePinned(id: number, pinned: boolean): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase.from('notes').update({ pinned }).eq('id', id)
+  if (error) throw error
+}
+
+export async function archiveNote(id: number): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('notes')
+    .update({ archived_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function unarchiveNote(id: number): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase.from('notes').update({ archived_at: null }).eq('id', id)
   if (error) throw error
 }
 

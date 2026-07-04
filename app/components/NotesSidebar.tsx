@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import {
   getNotes, createNote, deleteNote,
   getCollections, createCollection, renameCollection,
+  setNoteCollection, setNotePinned, archiveNote, unarchiveNote,
   NoteListItem, Collection,
 } from '../lib/db'
 
@@ -26,7 +27,8 @@ export default function NotesSidebar() {
   const [hoveredId, setHoveredId] = useState<number | null>(null)
   const [query, setQuery] = useState('')
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
-  const [collapsed, setCollapsed] = useState<Set<number | 'uncollected'>>(new Set())
+  const [collapsed, setCollapsed] = useState<Set<number | 'uncollected' | 'archive'>>(new Set(['archive']))
+  const [dragOverTarget, setDragOverTarget] = useState<number | 'uncollected' | null>(null)
   const [newCollectionMode, setNewCollectionMode] = useState(false)
   const [newCollectionName, setNewCollectionName] = useState('')
   const [hoveredGroup, setHoveredGroup] = useState<number | null>(null)
@@ -71,7 +73,7 @@ export default function NotesSidebar() {
     })
   }
 
-  function toggleCollapse(key: number | 'uncollected') {
+  function toggleCollapse(key: number | 'uncollected' | 'archive') {
     setCollapsed(prev => {
       const next = new Set(prev)
       next.has(key) ? next.delete(key) : next.add(key)
@@ -79,11 +81,19 @@ export default function NotesSidebar() {
     })
   }
 
+  function pinnedFirst(a: NoteListItem, b: NoteListItem): number {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+    return b.updated_at.localeCompare(a.updated_at)
+  }
+
+  const activeNotes = notes.filter(n => !n.archived_at)
+  const archivedNotes = notes.filter(n => !!n.archived_at).sort((a, b) => b.archived_at!.localeCompare(a.archived_at!))
+
   const allTags = new Map<string, string>()
-  for (const note of notes) for (const tag of note.tags) allTags.set(tag.name, tag.color)
+  for (const note of activeNotes) for (const tag of note.tags) allTags.set(tag.name, tag.color)
   const sortedTagNames = Array.from(allTags.keys()).sort()
 
-  const filteredNotes = notes.filter(n => {
+  const filteredNotes = activeNotes.filter(n => {
     const q = !query ||
       n.title.toLowerCase().includes(query.toLowerCase()) ||
       n.body.toLowerCase().includes(query.toLowerCase())
@@ -100,10 +110,12 @@ export default function NotesSidebar() {
       uncollectedNotes.push(note)
     }
   }
+  for (const [id, groupNotes] of notesByCollection) notesByCollection.set(id, [...groupNotes].sort(pinnedFirst))
+  uncollectedNotes.sort(pinnedFirst)
 
   const totalByCollection = new Map<number, number>()
   let totalUncollected = 0
-  for (const note of notes) {
+  for (const note of activeNotes) {
     if (note.collection_id != null) {
       totalByCollection.set(note.collection_id, (totalByCollection.get(note.collection_id) ?? 0) + 1)
     } else {
@@ -126,6 +138,41 @@ export default function NotesSidebar() {
     if (activeId === String(id)) {
       router.push(next.length > 0 ? `/notes/${next[0].id}` : '/notes')
     }
+  }
+
+  async function handleTogglePin(e: React.MouseEvent, note: NoteListItem) {
+    e.stopPropagation()
+    e.preventDefault()
+    const nextPinned = !note.pinned
+    setNotes(prev => prev.map(n => (n.id === note.id ? { ...n, pinned: nextPinned } : n)))
+    await setNotePinned(note.id, nextPinned)
+  }
+
+  async function handleArchive(e: React.MouseEvent, id: number) {
+    e.stopPropagation()
+    e.preventDefault()
+    const archivedAt = new Date().toISOString()
+    setNotes(prev => prev.map(n => (n.id === id ? { ...n, archived_at: archivedAt } : n)))
+    await archiveNote(id)
+    if (activeId === String(id)) {
+      const next = notes.filter(n => n.id !== id && !n.archived_at)
+      router.push(next.length > 0 ? `/notes/${next[0].id}` : '/notes')
+    }
+  }
+
+  async function handleUnarchive(id: number) {
+    setNotes(prev => prev.map(n => (n.id === id ? { ...n, archived_at: null } : n)))
+    await unarchiveNote(id)
+  }
+
+  function handleDropNote(e: React.DragEvent, targetCollectionId: number | null) {
+    e.preventDefault()
+    const noteId = e.dataTransfer.getData('noteId')
+    if (noteId) {
+      setNotes(prev => prev.map(n => (n.id === Number(noteId) ? { ...n, collection_id: targetCollectionId } : n)))
+      setNoteCollection(noteId, targetCollectionId)
+    }
+    setDragOverTarget(null)
   }
 
   async function handleCreateCollection() {
@@ -167,6 +214,9 @@ export default function NotesSidebar() {
     return (
       <div
         key={note.id}
+        draggable
+        onDragStart={e => e.dataTransfer.setData('noteId', String(note.id))}
+        onDragEnd={() => setDragOverTarget(null)}
         onClick={() => router.push(`/notes/${note.id}`)}
         onMouseEnter={() => setHoveredId(note.id)}
         onMouseLeave={() => setHoveredId(null)}
@@ -208,6 +258,28 @@ export default function NotesSidebar() {
             </div>
           )}
         </div>
+        {(note.pinned || hoveredId === note.id) && (
+          <button
+            onClick={e => handleTogglePin(e, note)}
+            className={`flex-shrink-0 text-[12px] leading-none transition-opacity cursor-pointer mt-1 ${
+              note.pinned ? '' : 'opacity-40 hover:opacity-80'
+            }`}
+            style={{ color: note.pinned ? 'var(--accent)' : 'var(--text-2)' }}
+            title={note.pinned ? 'Unpin note' : 'Pin note'}
+          >
+            📌
+          </button>
+        )}
+        {hoveredId === note.id && (
+          <button
+            onClick={e => handleArchive(e, note.id)}
+            className="flex-shrink-0 text-[13px] leading-none opacity-40 hover:opacity-80 transition-opacity cursor-pointer mt-1"
+            style={{ color: 'var(--text-2)' }}
+            title="Archive note"
+          >
+            ⬇
+          </button>
+        )}
         {hoveredId === note.id && (
           <button
             onClick={e => handleDelete(e, note.id)}
@@ -248,7 +320,13 @@ export default function NotesSidebar() {
             />
           </div>
         ) : (
-          <div className="flex items-center px-3 py-1.5">
+          <div
+            className="flex items-center px-3 py-1.5"
+            style={{ backgroundColor: dragOverTarget === key ? 'rgba(0,122,255,0.08)' : undefined }}
+            onDragOver={e => { e.preventDefault(); setDragOverTarget(key) }}
+            onDragLeave={() => setDragOverTarget(null)}
+            onDrop={e => handleDropNote(e, collection?.id ?? null)}
+          >
             <button
               onClick={() => toggleCollapse(key)}
               className="flex-1 min-w-0 flex items-center gap-1 text-left text-[11px] font-semibold uppercase tracking-wider transition-colors"
@@ -298,7 +376,7 @@ export default function NotesSidebar() {
       <div className="px-3 pt-3 pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-semibold tracking-widest uppercase" style={{ color: 'var(--text-3)' }}>
-            Notes{notes.length > 0 ? ` · ${notes.length}` : ''}
+            Notes{activeNotes.length > 0 ? ` · ${activeNotes.length}` : ''}
           </span>
           <button
             onClick={handleCreate}
@@ -387,7 +465,7 @@ export default function NotesSidebar() {
           <p className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-3)' }}>
             Loading…
           </p>
-        ) : notes.length === 0 ? (
+        ) : activeNotes.length === 0 ? (
           <p className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-3)' }}>
             No notes yet
           </p>
@@ -410,6 +488,43 @@ export default function NotesSidebar() {
             )}
             {renderGroup('uncollected', null, uncollectedNotes, totalUncollected)}
           </>
+        )}
+
+        {!loading && archivedNotes.length > 0 && (
+          <div className="mt-2" style={{ borderTop: '1px solid var(--border)' }}>
+            <button
+              onClick={() => toggleCollapse('archive')}
+              className="w-full flex items-center gap-1 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider transition-colors"
+              style={{ color: 'var(--text-3)' }}
+            >
+              <span className="text-[10px] font-normal">{collapsed.has('archive') ? '▸' : '▾'}</span>
+              Archive ({archivedNotes.length})
+            </button>
+            {!collapsed.has('archive') && archivedNotes.map(note => (
+              <div
+                key={note.id}
+                className="flex items-center px-3 py-[6px]"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] truncate" style={{ color: 'var(--text-3)' }}>
+                    {note.title || 'Untitled'}
+                  </p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>
+                    Archived {formatDate(note.archived_at!)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleUnarchive(note.id)}
+                  aria-label="Restore note"
+                  className="text-[12px] px-1.5 flex-shrink-0 hover:opacity-70 transition-opacity"
+                  style={{ color: 'var(--accent)' }}
+                  title="Restore from archive"
+                >
+                  ↩
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </aside>
