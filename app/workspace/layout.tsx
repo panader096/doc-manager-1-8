@@ -1,0 +1,36 @@
+import { redirect } from 'next/navigation'
+import { createClient } from '../lib/supabase/server'
+import { signOutAction } from '../lib/auth'
+
+export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
+  const supabase = await createClient()
+  const { data } = await supabase.auth.getClaims()
+  const claims = data?.claims
+
+  if (!claims) {
+    redirect('/login')
+  }
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-app)' }}>
+      <header
+        className="flex items-center justify-between px-6 py-3"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
+        <span className="text-[13px]" style={{ color: 'var(--text-2)' }}>
+          {claims.email}
+        </span>
+        <form action={signOutAction}>
+          <button
+            type="submit"
+            className="text-[12px] font-medium rounded-[4px] border px-2.5 py-1 transition-colors"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-1)' }}
+          >
+            Sign out
+          </button>
+        </form>
+      </header>
+      <main>{children}</main>
+    </div>
+  )
+}
