@@ -44,6 +44,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local scratch scaffold (separate test project, not part of the app)
+/supabase-test/
+
+# supabase CLI local link cache
+/supabase/.temp/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

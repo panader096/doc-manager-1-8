@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A personal document management app. Users can create, edit, and delete documents. Each document has its own unique URL (e.g. `/docs/abc123`). No backend or user accounts — all data stored in localStorage.
+A personal document management app. Users can create, edit, and delete documents. Each document has its own unique URL (e.g. `/docs/abc123`). Data is stored in Supabase (PostgreSQL); the app was originally localStorage-only and is being migrated.
 
 ## User experience
 
@@ -18,7 +18,7 @@ Each document has its own URL (`/docs/abc123`) so bookmarking or sharing a link 
 - Next.js with the App Router
 - TypeScript
 - Tailwind CSS for all styling
-- No backend — localStorage only
+- Supabase (PostgreSQL) — the app is migrating from localStorage to Supabase; both may coexist during the transition
 
 ## Running the app
 Run `npm run dev`. The app runs at http://localhost:3000.
@@ -27,6 +27,36 @@ Run `npm run dev`. The app runs at http://localhost:3000.
 - `/` — document list (home)
 - `/docs/[id]` — individual document page, where `id` is a unique identifier
 
+## Credentials
+
+All Supabase credentials live in `.env.local` and are never hardcoded in source files. The required keys are:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+```
+
+Do not add, rename, or remove these keys without updating every file that reads them.
+
+## Data access — single source of truth
+
+**All database reads and writes must go through `app/lib/documents.ts`.** No component or page may import a Supabase client directly.
+
+- Add a new named function to `documents.ts` for every new data operation.
+- The `Doc` and `Folder` interfaces in `documents.ts` are the canonical data shapes. Extend them there first before touching any other file.
+- Schema changes (new tables, columns, indexes) go in `supabase/migrations/` as numbered SQL files.
+
+### Supabase client wrappers
+
+Two thin wrappers own client creation — use the right one, never `createClient()` from `@supabase/ssr` directly:
+
+| File | Use when |
+|---|---|
+| `app/lib/supabase/client.ts` | Client Components (`'use client'`) |
+| `app/lib/supabase/server.ts` | Server Components, Route Handlers, Server Actions |
+
+The server client must be created inside each function that needs it — never as a module-level singleton (required for Next.js Fluid compute compatibility).
+
 ## Conventions
 - New pages go inside `app/`
 - Shared UI components go in `app/components/`
@@ -34,6 +64,7 @@ Run `npm run dev`. The app runs at http://localhost:3000.
 - Do not put secrets or API keys in source files — use `.env.local`
 - Before building a new feature, ask clarifying questions first to align on scope
 - Keep all styling within the existing Tailwind CSS + CSS custom-property design system — no new UI libraries
+- When adding a new feature that touches data: (1) update the interface in `documents.ts`, (2) add the migration SQL in `supabase/migrations/`, (3) add the function in `documents.ts`, (4) wire up the UI last
 
 ## Design system
 

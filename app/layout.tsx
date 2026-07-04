@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Document Manager",
-  description: "A personal document management app",
+  title: "Notes",
+  description: "A personal notes app backed by Supabase",
 };
 
 export default function RootLayout({
