@@ -51,6 +51,12 @@ export default async function LoginPage({
           </button>
         </form>
 
+        <p className="text-[12px] mt-2 text-right">
+          <Link href="/forgot-password" className="underline" style={{ color: 'var(--text-3)' }}>
+            Forgot your password?
+          </Link>
+        </p>
+
         <div className="flex items-center gap-2 my-4">
           <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border)' }} />
           <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>or</span>

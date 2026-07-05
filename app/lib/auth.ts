@@ -58,3 +58,32 @@ export async function signOutAction() {
   await supabase.auth.signOut()
   redirect('/login')
 }
+
+export async function requestPasswordResetAction(formData: FormData) {
+  const email = String(formData.get('email') ?? '')
+  const origin = (await headers()).get('origin')
+
+  const supabase = await createClient()
+  await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${origin}/reset-password`,
+  })
+
+  // Always show the same message regardless of whether the email exists,
+  // so this can't be used to enumerate registered accounts.
+  redirect('/forgot-password?message=' + encodeURIComponent(
+    'If an account exists for that email, a password reset link is on its way.',
+  ))
+}
+
+export async function updatePasswordAction(formData: FormData) {
+  const password = String(formData.get('password') ?? '')
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.updateUser({ password })
+
+  if (error) {
+    redirect(`/reset-password?error=${encodeURIComponent(error.message)}`)
+  }
+
+  redirect('/workspace')
+}

@@ -92,6 +92,18 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
     await applyTagChange(tags.map(t => t.name).filter(name => name !== tagName))
   }
 
+  function handleExportMarkdown() {
+    const slug = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled'
+    const markdown = `# ${title || 'Untitled'}\n\n${body}`
+    const blob = new Blob([markdown], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${slug}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -167,6 +179,15 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
             style={{ color: 'var(--text-2)' }}
           />
         </div>
+
+        <button
+          onClick={handleExportMarkdown}
+          className="ml-auto text-[12px] rounded-[4px] border px-2 py-1 transition-colors hover:bg-[var(--bg-hover)]"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-2)' }}
+          title="Download this note as a .md file"
+        >
+          Export .md
+        </button>
       </div>
 
       <div className="flex-1 min-h-0 px-10 pb-4">

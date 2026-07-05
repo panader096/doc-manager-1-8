@@ -41,7 +41,10 @@ Run `npm run dev`. The app runs at http://localhost:3000.
 - `/shared/[token]` — public, read-only view of a collection shared via `collections.share_token`; no sidebar, no auth
 - `/login` — sign in with email/password or Google
 - `/signup` — create an account with email/password
+- `/forgot-password` — request a password-reset email
+- `/reset-password` — set a new password; only reachable via a valid recovery link/session
 - `/auth/callback` — OAuth callback route; exchanges the Google auth code for a session, then redirects to `/workspace`
+- `/auth/confirm` — email-link verification route (`token_hash` + `type`); used by the password-recovery email, redirects to `?next=` (default `/workspace`) on success or `/login` with an error on failure
 - `/workspace` — signed-in-only placeholder area; every page under it requires a session (see Authentication below)
 
 ## Credentials
@@ -145,6 +148,8 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Pinned notes (float to top of their collection) | `setNotePinned()` in `db.ts`; pin button in `NotesSidebar.tsx` |
 | Archive / unarchive (soft hide, not delete) | `archiveNote()` / `unarchiveNote()` in `db.ts`; collapsible Archive section in `NotesSidebar.tsx` |
 | Server-side full-text search (prefix matching) | `searchNotes()` in `db.ts` against `notes.search_vector` |
+| Export a note as Markdown | `handleExportMarkdown()` in `NoteEditor.tsx` — client-side Blob download, no server round-trip |
+| Loading skeleton while notes fetch | `NotesSidebar.tsx` — pulsing placeholder rows instead of a blank/plain-text loading state |
 | Search history (last 5, upsert + prune) | `getSearchHistory()` / `recordSearch()` in `db.ts` |
 | Collection sharing via read-only link | `generateShareLink()` / `revokeShareLink()` / `getSharedCollection()` in `db.ts`; `app/shared/[token]/page.tsx`; the one narrow anon-read exception in an otherwise fully user-scoped schema |
 | Dark / light theme toggle | `NotesSidebar.tsx` — `toggleTheme()` (same `localStorage.theme` mechanism as the doc-manager) |
@@ -155,5 +160,6 @@ Do not re-implement these. Check the relevant component before adding anything a
 |---|---|
 | Email/password sign-up, sign-in, sign-out | `app/lib/auth.ts`; `app/login/page.tsx`, `app/signup/page.tsx` |
 | Google sign-in (OAuth/PKCE) | `signInWithGoogleAction()` in `auth.ts`; `app/auth/callback/route.ts` |
+| Password reset via email | `requestPasswordResetAction()` / `updatePasswordAction()` in `auth.ts`; `app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/auth/confirm/route.ts` (`verifyOtp()` with `token_hash`+`type` — the current documented pattern for email-link verification, distinct from the OAuth `code` exchange `/auth/callback` uses) |
 | Session refresh on every request | `app/lib/supabase/middleware.ts`, wired up in root `proxy.ts` |
 | Server-side route protection for `/workspace` and `/notes` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks both path prefixes too, as a first line of defense |
