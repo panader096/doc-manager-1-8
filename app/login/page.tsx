@@ -4,9 +4,9 @@ import { signInAction, signInWithGoogleAction } from '../lib/auth'
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; message?: string }>
 }) {
-  const { error } = await searchParams
+  const { error, message } = await searchParams
 
   return (
     <div className="flex h-screen items-center justify-center" style={{ backgroundColor: 'var(--bg-app)' }}>
@@ -20,6 +20,9 @@ export default async function LoginPage({
 
         {error && (
           <p className="text-[12px] mb-4 text-red-500">{error}</p>
+        )}
+        {message && (
+          <p className="text-[12px] mb-4" style={{ color: 'var(--accent)' }}>{message}</p>
         )}
 
         <form action={signInAction} className="flex flex-col gap-3">

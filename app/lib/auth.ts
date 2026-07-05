@@ -19,7 +19,7 @@ export async function signUpAction(formData: FormData) {
     redirect('/workspace')
   }
 
-  redirect('/signup?message=' + encodeURIComponent('Check your email to confirm your account.'))
+  redirect('/login?message=' + encodeURIComponent('Check your email to confirm your account.'))
 }
 
 export async function signInAction(formData: FormData) {

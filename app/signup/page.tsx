@@ -4,9 +4,9 @@ import { signUpAction } from '../lib/auth'
 export default async function SignUpPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; message?: string }>
+  searchParams: Promise<{ error?: string }>
 }) {
-  const { error, message } = await searchParams
+  const { error } = await searchParams
 
   return (
     <div className="flex h-screen items-center justify-center" style={{ backgroundColor: 'var(--bg-app)' }}>
@@ -19,7 +19,6 @@ export default async function SignUpPage({
         </h1>
 
         {error && <p className="text-[12px] mb-4 text-red-500">{error}</p>}
-        {message && <p className="text-[12px] mb-4" style={{ color: 'var(--accent)' }}>{message}</p>}
 
         <form action={signUpAction} className="flex flex-col gap-3">
           <input

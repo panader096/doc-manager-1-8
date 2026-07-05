@@ -634,9 +634,14 @@ export default function NotesSidebar() {
 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <p className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-3)' }}>
-            Loading…
-          </p>
+          <div className="animate-pulse">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex flex-col gap-1.5 px-3 py-2">
+                <div className="h-[12px] rounded-[3px] w-3/5" style={{ backgroundColor: 'var(--bg-hover)' }} />
+                <div className="h-[10px] rounded-[3px] w-1/4" style={{ backgroundColor: 'var(--bg-hover)' }} />
+              </div>
+            ))}
+          </div>
         ) : activeNotes.length === 0 ? (
           <p className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-3)' }}>
             No notes yet
