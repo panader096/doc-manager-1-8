@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { signInAction, signInWithGoogleAction } from '../lib/auth'
+import { signInAction, signInWithGoogleAction, signInWithGitHubAction } from '../lib/auth'
 
 export default async function LoginPage({
   searchParams,
@@ -70,6 +70,16 @@ export default async function LoginPage({
             style={{ borderColor: 'var(--border)', color: 'var(--text-1)' }}
           >
             Sign in with Google
+          </button>
+        </form>
+
+        <form action={signInWithGitHubAction} className="mt-2">
+          <button
+            type="submit"
+            className="w-full text-[13px] font-medium rounded-[4px] border px-3 py-2 transition-colors"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-1)' }}
+          >
+            Sign in with GitHub
           </button>
         </form>
 

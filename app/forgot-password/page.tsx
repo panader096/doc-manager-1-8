@@ -4,9 +4,9 @@ import { requestPasswordResetAction } from '../lib/auth'
 export default async function ForgotPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ message?: string }>
+  searchParams: Promise<{ message?: string; error?: string }>
 }) {
-  const { message } = await searchParams
+  const { message, error } = await searchParams
 
   return (
     <div className="flex h-screen items-center justify-center" style={{ backgroundColor: 'var(--bg-app)' }}>
@@ -21,6 +21,9 @@ export default async function ForgotPasswordPage({
           Enter your email and we&rsquo;ll send you a link to reset your password.
         </p>
 
+        {error && (
+          <p className="text-[12px] mb-4 text-red-500">{error}</p>
+        )}
         {message && (
           <p className="text-[12px] mb-4" style={{ color: 'var(--accent)' }}>{message}</p>
         )}

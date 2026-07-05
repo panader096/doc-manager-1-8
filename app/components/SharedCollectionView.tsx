@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getSharedCollection, Collection, NoteListItem } from '../lib/db'
+import { getSharedCollection, getNoteImageUrl, Collection, NoteListItem } from '../lib/db'
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })
@@ -10,11 +10,21 @@ function formatDate(iso: string): string {
 export default function SharedCollectionView({ token }: { token: string }) {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<{ collection: Collection; notes: NoteListItem[] } | null>(null)
+  const [imageUrls, setImageUrls] = useState<Record<number, string>>({})
 
   useEffect(() => {
-    getSharedCollection(token).then(result => {
+    getSharedCollection(token).then(async result => {
       setData(result)
       setLoading(false)
+      if (!result) return
+
+      const withImages = result.notes.filter(note => note.image_path)
+      const entries = await Promise.all(
+        withImages.map(async note => [note.id, await getNoteImageUrl(note.image_path!)] as const),
+      )
+      const urls: Record<number, string> = {}
+      for (const [id, url] of entries) if (url) urls[id] = url
+      setImageUrls(urls)
     })
   }, [token])
 
@@ -60,6 +70,14 @@ export default function SharedCollectionView({ token }: { token: string }) {
                 <p className="text-[11px] mb-3" style={{ color: 'var(--text-3)' }}>
                   Updated {formatDate(note.updated_at)}
                 </p>
+                {imageUrls[note.id] && (
+                  <img
+                    src={imageUrls[note.id]}
+                    alt=""
+                    className="max-h-64 rounded-[6px] border mb-3"
+                    style={{ borderColor: 'var(--border)' }}
+                  />
+                )}
                 <p className="text-[14px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-2)' }}>
                   {note.body}
                 </p>

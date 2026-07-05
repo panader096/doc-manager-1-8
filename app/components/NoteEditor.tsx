@@ -1,7 +1,21 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { getNote, updateNote, getCollections, setNoteCollection, setNoteTags, Collection, NoteTag } from '../lib/db'
+import {
+  getNote,
+  updateNote,
+  getCollections,
+  setNoteCollection,
+  setNoteTags,
+  getNoteImageUrl,
+  uploadNoteImage,
+  removeNoteImage,
+  Collection,
+  NoteTag,
+} from '../lib/db'
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 
 type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
 
@@ -22,13 +36,21 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
   const [status, setStatus] = useState<SaveStatus>('idle')
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [imagePath, setImagePath] = useState<string | null>(null)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [imageUploading, setImageUploading] = useState(false)
+  const [imageError, setImageError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tagInputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setLoading(true)
     setNotFound(false)
     setStatus('idle')
+    setImagePath(null)
+    setImageUrl(null)
+    setImageError(null)
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
     Promise.all([getNote(noteId), getCollections()]).then(([note, cols]) => {
@@ -40,6 +62,10 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
         setBody(note.body)
         setCollectionId(note.collection_id)
         setTags(note.tags)
+        setImagePath(note.image_path)
+        if (note.image_path) {
+          getNoteImageUrl(note.image_path).then(setImageUrl)
+        }
       }
     }).finally(() => setLoading(false))
   }, [noteId])
@@ -102,6 +128,50 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
     a.download = `${slug}.md`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setImageError('Unsupported image type.')
+      return
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImageError('Image must be 5MB or smaller.')
+      return
+    }
+
+    setImageError(null)
+    setImageUploading(true)
+    try {
+      const url = await uploadNoteImage(noteId, file)
+      const note = await getNote(noteId)
+      setImagePath(note?.image_path ?? null)
+      setImageUrl(url)
+      window.dispatchEvent(new Event('notes-updated'))
+    } catch {
+      setImageError('Failed to upload image.')
+    } finally {
+      setImageUploading(false)
+    }
+  }
+
+  async function handleImageRemove() {
+    if (!imagePath) return
+    setImageUploading(true)
+    try {
+      await removeNoteImage(noteId, imagePath)
+      setImagePath(null)
+      setImageUrl(null)
+      window.dispatchEvent(new Event('notes-updated'))
+    } catch {
+      setImageError('Failed to remove image.')
+    } finally {
+      setImageUploading(false)
+    }
   }
 
   if (loading) {
@@ -180,15 +250,57 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
           />
         </div>
 
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept={ACCEPTED_IMAGE_TYPES.join(',')}
+          onChange={handleImageSelect}
+          className="hidden"
+        />
+        <button
+          onClick={() => imageInputRef.current?.click()}
+          disabled={imageUploading}
+          className="ml-auto text-[12px] rounded-[4px] border px-2 py-1 transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-2)' }}
+        >
+          {imageUploading ? 'Uploading…' : imagePath ? 'Replace image' : 'Add image'}
+        </button>
+
         <button
           onClick={handleExportMarkdown}
-          className="ml-auto text-[12px] rounded-[4px] border px-2 py-1 transition-colors hover:bg-[var(--bg-hover)]"
+          className="text-[12px] rounded-[4px] border px-2 py-1 transition-colors hover:bg-[var(--bg-hover)]"
           style={{ borderColor: 'var(--border)', color: 'var(--text-2)' }}
           title="Download this note as a .md file"
         >
           Export .md
         </button>
       </div>
+
+      {imageError && (
+        <p className="px-10 pb-3 text-[12px] text-red-500">{imageError}</p>
+      )}
+
+      {imageUrl && (
+        <div className="px-10 pb-4">
+          <div className="relative inline-block">
+            <img
+              src={imageUrl}
+              alt=""
+              className="max-h-64 rounded-[6px] border"
+              style={{ borderColor: 'var(--border)' }}
+            />
+            <button
+              onClick={handleImageRemove}
+              disabled={imageUploading}
+              aria-label="Remove image"
+              className="absolute top-1.5 right-1.5 text-[11px] rounded-[4px] px-1.5 py-0.5 disabled:opacity-50"
+              style={{ backgroundColor: 'var(--bg-modal)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 px-10 pb-4">
         <textarea

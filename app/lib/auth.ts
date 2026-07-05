@@ -53,6 +53,23 @@ export async function signInWithGoogleAction() {
   }
 }
 
+export async function signInWithGitHubAction() {
+  const origin = (await headers()).get('origin')
+  const supabase = await createClient()
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'github',
+    options: { redirectTo: `${origin}/auth/callback` },
+  })
+
+  if (error) {
+    redirect(`/login?error=${encodeURIComponent(error.message)}`)
+  }
+
+  if (data.url) {
+    redirect(data.url)
+  }
+}
+
 export async function signOutAction() {
   const supabase = await createClient()
   await supabase.auth.signOut()
@@ -64,12 +81,19 @@ export async function requestPasswordResetAction(formData: FormData) {
   const origin = (await headers()).get('origin')
 
   const supabase = await createClient()
-  await supabase.auth.resetPasswordForEmail(email, {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${origin}/reset-password`,
   })
 
-  // Always show the same message regardless of whether the email exists,
-  // so this can't be used to enumerate registered accounts.
+  // Supabase's own API never errors just because the email doesn't belong
+  // to an account (by design, to prevent enumeration) -- it only errors for
+  // real failures like rate-limiting. So surfacing `error` here is safe and
+  // doesn't leak whether an account exists; it just stops pretending an
+  // email was sent when the request actually failed.
+  if (error) {
+    redirect(`/forgot-password?error=${encodeURIComponent(error.message)}`)
+  }
+
   redirect('/forgot-password?message=' + encodeURIComponent(
     'If an account exists for that email, a password reset link is on its way.',
   ))

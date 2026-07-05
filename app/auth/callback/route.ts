@@ -12,5 +12,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(new URL('/login?error=Could not sign in with Google', request.url))
+  return NextResponse.redirect(new URL('/login?error=Could not sign in', request.url))
 }

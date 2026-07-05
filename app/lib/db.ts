@@ -27,6 +27,7 @@ export type NoteListItem = {
   collection_id: number | null
   pinned: boolean
   archived_at: string | null
+  image_path: string | null
   tags: NoteTag[]
 }
 
@@ -39,6 +40,7 @@ export type Note = {
   collection_id: number | null
   pinned: boolean
   archived_at: string | null
+  image_path: string | null
   tags: NoteTag[]
 }
 
@@ -60,6 +62,7 @@ type NoteRow = {
   collection_id: number | null
   pinned: boolean
   archived_at: string | null
+  image_path: string | null
   note_tags: NoteTagsRow[]
 }
 
@@ -71,8 +74,8 @@ function flattenTags(row: NoteRow): NoteTag[] {
   })
 }
 
-const NOTE_LIST_SELECT = 'id, title, body, updated_at, collection_id, pinned, archived_at, note_tags(tags(name, color))'
-const NOTE_SELECT = 'id, title, body, created_at, updated_at, collection_id, pinned, archived_at, note_tags(tags(name, color))'
+const NOTE_LIST_SELECT = 'id, title, body, updated_at, collection_id, pinned, archived_at, image_path, note_tags(tags(name, color))'
+const NOTE_SELECT = 'id, title, body, created_at, updated_at, collection_id, pinned, archived_at, image_path, note_tags(tags(name, color))'
 
 function mapNoteRow(row: NoteRow): NoteListItem {
   return {
@@ -83,6 +86,7 @@ function mapNoteRow(row: NoteRow): NoteListItem {
     collection_id: row.collection_id,
     pinned: row.pinned,
     archived_at: row.archived_at,
+    image_path: row.image_path,
     tags: flattenTags(row),
   }
 }
@@ -136,7 +140,7 @@ export async function createNote(): Promise<NoteListItem> {
   const { data, error } = await supabase
     .from('notes')
     .insert({ title: '', body: '', updated_at: new Date().toISOString() })
-    .select('id, title, body, updated_at, collection_id, pinned, archived_at')
+    .select('id, title, body, updated_at, collection_id, pinned, archived_at, image_path')
     .single()
   if (error) throw error
   return { ...data, tags: [] }
@@ -335,4 +339,54 @@ export async function recordSearch(query: string): Promise<void> {
     const { error: deleteError } = await supabase.from('search_history').delete().in('id', staleIds)
     if (deleteError) throw deleteError
   }
+}
+
+const NOTE_IMAGES_BUCKET = 'note-images'
+
+export async function getNoteImageUrl(imagePath: string): Promise<string | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase.storage.from(NOTE_IMAGES_BUCKET).createSignedUrl(imagePath, 3600)
+  if (error) return null
+  return data.signedUrl
+}
+
+export async function uploadNoteImage(noteId: string, file: File): Promise<string | null> {
+  const supabase = createClient()
+
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  if (userError) throw userError
+  const userId = userData.user.id
+
+  const { data: existing, error: fetchError } = await supabase
+    .from('notes')
+    .select('image_path')
+    .eq('id', noteId)
+    .single()
+  if (fetchError) throw fetchError
+
+  const ext = file.name.includes('.') ? file.name.split('.').pop() : 'png'
+  const path = `${userId}/${noteId}/image.${ext}`
+
+  if (existing.image_path && existing.image_path !== path) {
+    await supabase.storage.from(NOTE_IMAGES_BUCKET).remove([existing.image_path])
+  }
+
+  const { error: uploadError } = await supabase.storage
+    .from(NOTE_IMAGES_BUCKET)
+    .upload(path, file, { upsert: true })
+  if (uploadError) throw uploadError
+
+  const { error: updateError } = await supabase.from('notes').update({ image_path: path }).eq('id', noteId)
+  if (updateError) throw updateError
+
+  return getNoteImageUrl(path)
+}
+
+export async function removeNoteImage(noteId: string, imagePath: string): Promise<void> {
+  const supabase = createClient()
+  const { error: removeError } = await supabase.storage.from(NOTE_IMAGES_BUCKET).remove([imagePath])
+  if (removeError) throw removeError
+
+  const { error: updateError } = await supabase.from('notes').update({ image_path: null }).eq('id', noteId)
+  if (updateError) throw updateError
 }
