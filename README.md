@@ -1,20 +1,16 @@
-# Document Manager
+# Document Manager & Notes
 
-<!-- 
-This app is a browser-based document management workspace where users can create, 
-edit, delete, and organize documents. It features real-time search, markdown preview, 
-tagging, document history, a command palette for quick actions, and organized folder 
-structure — all without requiring a backend server. Data persists in the browser 
-using localStorage, making it a true single-user offline-capable workspace.
--->
+A Turing College "Building with AI / Claude Code" course project (Sprint 1.8 → Sprint 2). Started as a single-user, browser-only document manager and grew into two apps sharing one Supabase project, plus a small Supabase Auth workspace.
 
-A personal document management app built as part of the Turing College "Building with AI / Claude Code" course (Sprint 1.8).
+## What's in this repo
 
-Single-user, browser-only workspace. No backend, no accounts — all data stored in `localStorage`.
+- **Doc manager** (`/docs`) — the original document workspace. Documents have a unique URL (`/docs/[id]`), autosave, markdown preview, tags, starring, history/snapshots, soft delete, a command palette (`Ctrl+K`), and folders. Still fully public, no login required, no Supabase involved — everything lives in the browser's `localStorage`.
+- **Notes app** (`/notes`) — a Supabase-native rebuild with collections, tags, server-side full-text search, pinning, archiving, one image per note (Supabase Storage, not base64), and read-only collection sharing via link (`/shared/[token]`). **Requires signing in** — every note, collection, tag, and search-history row belongs to exactly one user, enforced by Postgres Row Level Security, so signed-in users only ever see their own data.
+- **Workspace** (`/workspace`) — a small placeholder area behind Supabase Auth, proving out sign-up/sign-in via email+password, Google OAuth, and GitHub OAuth.
 
 ## Screenshot
 
-![Document Manager workspace](docs/screenshot.png)
+_Add a screenshot of the running app here (e.g. `docs/screenshot.png`) before submitting — none is committed yet._
 
 ## Running locally
 
@@ -25,56 +21,70 @@ npm run dev
 
 Opens at [http://localhost:3000](http://localhost:3000).
 
+### Environment variables
+
+Create a `.env.local` file in the project root with:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+```
+
+Both values come from your Supabase project dashboard: **Project Settings → Data API** for the Project URL, and **Project Settings → API Keys** for the publishable (anon) key. Never use the `service_role`/secret key here — only the publishable key belongs in this app, and only in `.env.local`, never committed.
+
+You'll also need the SQL migrations in `supabase/migrations/` applied to that project (via the Supabase CLI or dashboard SQL editor) for the notes app and auth to work — they create the `notes`/`collections`/`tags`/`search_history` tables, their RLS policies, and the `note-images` Storage bucket.
+
 ## Features
 
-**Core**
+**Doc manager — Core**
 - Create, edit, and delete documents with auto-save (400 ms debounce)
 - Each document has a unique URL (`/docs/[id]`) — bookmarkable and shareable
 - Live title search in the sidebar
 - Markdown preview (`# h1`, `**bold**`, `*italic*`, `- list`)
 
-**Optional — Easy (branch `1.8.6-optional-easy`)**
-- Star documents — pinned to the top of the list
-- Dark / light theme toggle with FOUC prevention
-- Live word count in edit mode
+**Doc manager — optional tiers (branches `1.8.6`–`1.8.9`)**
+- Starred documents, dark/light theme toggle, live word count
+- Tags, export/import workspace as JSON, document history (up to 3 snapshots)
+- Soft delete/trash, command palette (`Ctrl+K`), drag-and-drop folders
+- Apple Pro visual redesign, CSS custom-property design tokens
 
-**Optional — Medium (branch `1.8.7-optional-medium`)**
-- Tags — add, remove, filter across the workspace
-- Export / import workspace as JSON
-- Document history — up to 3 manual snapshots per document, with preview and restore
+**Notes app** (`/notes`)
+- Collections (create, rename, drag-to-reorder), tags (colour-coded, multi-select filter), drag-and-drop note organization
+- Pin / archive notes, server-side full-text search with recent-search suggestions
+- One image per note via Supabase Storage, visible in shared links too
+- Read-only collection sharing via `/shared/[token]`
+- Export a note as Markdown
 
-**Optional — Hard (branch `1.8.8-hard`)**
-- Soft delete / trash — documents land in a collapsible trash section before permanent removal
-- Command palette — `Ctrl+K` opens a fuzzy search overlay with Preview / Edit / Delete actions
-- Folder structure — create named folders, drag documents into them, collapse/expand, delete with choice to keep or discard contents
+**Authentication** (`/workspace`, delivered as the "hard" optional task — see below)
+- Email/password sign-up and sign-in, Google OAuth, GitHub OAuth
+- Password reset via email
+- Server-side session verification (`getUser()`) protecting every page under `/workspace` and `/notes`
 
-**UI design (branch `1.8.9-ui-design`)**
-- Apple Pro aesthetic — Xcode/Final Cut Pro colour palette, system font stack (`-apple-system`, SF Pro)
-- CSS custom-property design tokens; dark and light themes both work correctly
-- 4 px border radius throughout, 2 px left-bar active indicator, monospace timestamps and tags
+**Optional task delivered — Hard: Supabase Auth + a fully user-scoped notes app**, across `feature/add-auth` ([PR #7](https://github.com/panader096/doc-manager-1-8/pull/7)) and the `v2.8.1`–`v2.8.5-hard` sprints ([PR #8](https://github.com/panader096/doc-manager-1-8/pull/8)): email/password + Google + GitHub sign-in, every notes-app table scoped to `auth.uid()` via RLS, and Supabase Storage for per-note images.
 
 ## Stack
 
 - [Next.js 16](https://nextjs.org/docs) — App Router
 - TypeScript
 - Tailwind CSS v4
-- `localStorage` for all persistence — no server required
+- Supabase (Postgres, Auth, Storage) for the notes app and auth; `localStorage` for the doc manager
 
 ## Project structure
 
 ```
 app/
-  components/
-    Sidebar.tsx        # document list, folders, search, theme toggle
-    DocsShell.tsx      # two-pane layout shell
-    CommandPalette.tsx # Ctrl+K overlay
-  docs/
-    page.tsx           # empty state
-    [id]/page.tsx      # editor + preview
-  lib/documents.ts     # all storage functions
-  globals.css          # design tokens (CSS custom properties)
-  layout.tsx           # root layout with FOUC-prevention script
+  docs/                    # doc manager (localStorage)
+  notes/                   # Supabase-backed notes app (auth-gated)
+  workspace/, login/, signup/, forgot-password/, reset-password/  # Supabase Auth
+  components/              # Sidebar.tsx, NotesSidebar.tsx, NoteEditor.tsx, CommandPalette.tsx, ...
+  lib/
+    documents.ts           # doc manager data access
+    db.ts                  # notes app data access
+    auth.ts                # all Supabase Auth calls
+    supabase/               # client/server/middleware wrappers
+supabase/
+  migrations/              # numbered SQL migrations (schema, RLS, Storage)
 docs/
-  REFLECTION.md        # architectural decisions
-  nextjs-layouts-and-pages.md  # cited Next.js reference
+  REFLECTION.md            # architectural decisions and lessons learned
+CLAUDE.md                  # full project conventions and architecture notes for Claude Code
 ```

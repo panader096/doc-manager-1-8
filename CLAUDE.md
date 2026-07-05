@@ -77,6 +77,8 @@ A note belongs to at most one collection (`collection_id` is nullable — a note
 
 **Exception:** `/shared/[token]` (`getSharedCollection()` in `db.ts`) needs to keep working for anonymous visitors. Rather than any blanket anon access, there are four narrow, explicit anon `SELECT`-only policies — `collections` where `share_token is not null`, and `notes`/`note_tags`/`tags` cascading through that same collection. This is the *only* anon access anywhere in the notes schema (Storage aside — see below); don't broaden it when adding new tables — anon gets nothing by default, and any new anon exception should be this same narrow, explicit shape.
 
+**What happens when a note is created** (for the review call): `createNote()` in `db.ts` inserts a row with no explicit `user_id` value. Postgres fills it in itself, from the column default `auth.uid()` — a function that reads the caller's ID out of the JWT the Supabase client sent with the request. Nothing in the application code ever passes `user_id` around; ownership is stamped on by the database at insert time, not decided by a page or component. From then on, that same `user_id` is what every RLS policy checks (`auth.uid() = user_id`) to decide whether the signed-in user is allowed to see, update, or delete that row — so even a bug in the UI that requested "all notes" would still only get back the rows belonging to whoever is signed in.
+
 ### Note images (Supabase Storage)
 
 One optional image per note, stored in the private `note-images` Storage bucket — never as base64 in the database. `notes.image_path` holds the Storage object path (not a public URL); rendering always goes through a signed URL from `getNoteImageUrl()`.

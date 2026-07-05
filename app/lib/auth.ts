@@ -36,11 +36,11 @@ export async function signInAction(formData: FormData) {
   redirect('/workspace')
 }
 
-export async function signInWithGoogleAction() {
+async function signInWithOAuthProvider(provider: 'google' | 'github') {
   const origin = (await headers()).get('origin')
   const supabase = await createClient()
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
+    provider,
     options: { redirectTo: `${origin}/auth/callback` },
   })
 
@@ -53,21 +53,12 @@ export async function signInWithGoogleAction() {
   }
 }
 
+export async function signInWithGoogleAction() {
+  await signInWithOAuthProvider('google')
+}
+
 export async function signInWithGitHubAction() {
-  const origin = (await headers()).get('origin')
-  const supabase = await createClient()
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'github',
-    options: { redirectTo: `${origin}/auth/callback` },
-  })
-
-  if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`)
-  }
-
-  if (data.url) {
-    redirect(data.url)
-  }
+  await signInWithOAuthProvider('github')
 }
 
 export async function signOutAction() {
