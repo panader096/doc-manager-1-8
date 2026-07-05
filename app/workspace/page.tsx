@@ -3,6 +3,7 @@ import { createClient } from '../lib/supabase/server'
 
 const APPS = [
   { name: 'Notes', description: 'Collections, tags, search, and more.', href: '/notes' },
+  { name: 'Doc Manager', description: 'Documents, folders, and Markdown export.', href: '/docs' },
 ]
 
 export default async function WorkspacePage() {
