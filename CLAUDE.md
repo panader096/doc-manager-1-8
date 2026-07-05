@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo now contains two apps sharing one Supabase project:
 
-- **Doc manager** (`/docs`) — the original personal document management app. Documents have a unique URL (e.g. `/docs/abc123`); data was originally localStorage-only and is being migrated to Supabase.
-- **Notes app** (`/notes`) — a Supabase-native notes app with collections, tags, search, pinning, archiving, and collection sharing via link. Built from scratch against Supabase; no localStorage involved.
-- **Workspace** (`/workspace`) — the only part of this app that requires signing in. A minimal placeholder area proving out Supabase Auth (email/password and Google). `/docs` and `/notes` remain fully public with no login required.
+- **Doc manager** (`/docs`) — the original personal document management app. Documents have a unique URL (e.g. `/docs/abc123`); data was originally localStorage-only and is being migrated to Supabase. Still fully public, no login required.
+- **Notes app** (`/notes`) — a Supabase-native notes app with collections, tags, search, pinning, archiving, and collection sharing via link. **Requires signing in** — every note, collection, tag, and search-history row belongs to exactly one user (`user_id`, enforced by RLS), so each signed-in user only ever sees their own data. The one deliberate exception: `/shared/[token]` stays anonymously readable, since that's the point of a share link.
+- **Workspace** (`/workspace`) — a minimal placeholder area proving out Supabase Auth (email/password and Google). Requires signing in, same as `/notes`.
 
 ## User experience
 
@@ -66,9 +66,13 @@ For either app: add a new named function to the relevant module for every new da
 
 ### Notes app schema
 
-Tables (all lowercase, all with anon select/insert/update/delete RLS policies): `notes` (`id`, `title`, `body`, `created_at`, `updated_at`, `collection_id` → `collections.id` nullable, `pinned` boolean, `archived_at` nullable timestamptz, `search_vector` generated tsvector column with a GIN index), `collections` (`id`, `name`, `created_at`, `position` integer for manual ordering, `share_token` nullable unique text), `tags` (`id`, `name`, `color`), `note_tags` (`note_id`, `tag_id`, composite primary key — join table), `search_history` (`id`, `query` unique, `searched_at`, capped at 5 rows).
+Tables (all lowercase): `notes` (`id`, `title`, `body`, `created_at`, `updated_at`, `collection_id` → `collections.id` nullable, `pinned` boolean, `archived_at` nullable timestamptz, `search_vector` generated tsvector column with a GIN index, `user_id`), `collections` (`id`, `name`, `created_at`, `position` integer for manual ordering, `share_token` nullable unique text, `user_id`), `tags` (`id`, `name`, `color`, `user_id`), `note_tags` (`note_id`, `tag_id`, composite primary key — join table, no `user_id` of its own), `search_history` (`id`, `query`, `searched_at`, `user_id`, unique on `(user_id, query)`, capped at 5 rows per user).
 
 A note belongs to at most one collection (`collection_id` is nullable — a note can also belong to none); a collection can contain many notes. A note can carry many tags and a tag can apply to many notes, via `note_tags`.
+
+**Every table is scoped to the signed-in user.** `notes`/`collections`/`tags`/`search_history` each have a `user_id uuid not null default auth.uid() references auth.users(id)`; RLS policies are `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` — one policy per table covering select/insert/update/delete, not four separate ones (a deliberate simplification once the predicate is identical across all four commands). `note_tags` has no `user_id` column of its own; its policy checks ownership through the referenced `notes` row (and, in `WITH CHECK`, the referenced `tags` row too, so a user can't link their own note to someone else's tag).
+
+**Exception:** `/shared/[token]` (`getSharedCollection()` in `db.ts`) needs to keep working for anonymous visitors. Rather than any blanket anon access, there are four narrow, explicit anon `SELECT`-only policies — `collections` where `share_token is not null`, and `notes`/`note_tags`/`tags` cascading through that same collection. This is the *only* anon access anywhere in the notes schema; don't broaden it when adding new tables — anon gets nothing by default, and any new anon exception should be this same narrow, explicit shape.
 
 ### Supabase client wrappers
 
@@ -87,11 +91,13 @@ The server client must be created inside each function that needs it — never a
 **Rule for agent:** Every signed-in-only page must verify the user's session with the Supabase Auth server before it loads, and redirect to the sign-in page if the user is not signed in.
 
 - Use Supabase Auth for all sign-in and session handling — never build custom auth or store passwords yourself
-- Every page under `/workspace` requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in
+- Every page under `/workspace` **and every page under `/notes`** requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in
 - After a successful sign-in, redirect to `/workspace`
 - After sign-out, redirect to `/login`. Do not rely on the browser-side session alone.
+- A sign-out control must be reachable from within `/notes`, not just `/workspace` (`NotesSidebar.tsx`'s footer)
+- Never put the service-role/secret key in any `NEXT_PUBLIC_`-prefixed env var, or anywhere client-accessible — only the two keys listed under Credentials belong in this app at all
 
-Server-side session checks use `supabase.auth.getClaims()`, not `getUser()` or `getSession()` — Supabase's own docs are explicit that `getSession()` must never be trusted in server code, since it can be spoofed when cookie storage is shared with the client. All auth calls (sign up, sign in, sign in with Google, sign out) go through `app/lib/auth.ts` — the same single-source-of-truth convention as `documents.ts`/`db.ts`, just for auth instead of data.
+Server-side session checks use **`supabase.auth.getUser()`** — not `getSession()` (never trust it server-side; it can be spoofed when cookie storage is shared with the client) and, in this project, not `getClaims()` either, even though it's Supabase's newer/faster recommendation — this project's rubric specifically calls for `getUser()`, so that's the standard here. If a diff introduces `getSession()` in server code (a Server Component, Route Handler, Server Action, or the proxy), flag it before merging. All auth calls (sign up, sign in, sign in with Google, sign out) go through `app/lib/auth.ts` — the same single-source-of-truth convention as `documents.ts`/`db.ts`, just for auth instead of data.
 
 ## Conventions
 - New pages go inside `app/`
@@ -101,7 +107,7 @@ Server-side session checks use `supabase.auth.getClaims()`, not `getUser()` or `
 - Before building a new feature, ask clarifying questions first to align on scope
 - Keep all styling within the existing Tailwind CSS + CSS custom-property design system — no new UI libraries
 - When adding a new feature that touches data: (1) update the interface in `documents.ts` or `db.ts` (whichever app), (2) add the migration SQL in `supabase/migrations/`, (3) add the function in that same module, (4) wire up the UI last
-- New RLS policies: add select **and** insert **and** update **and** delete together for any anon-writable table — every table in this project that shipped with only a select policy needed a follow-up migration once insert was attempted
+- New RLS policies: cover select **and** insert **and** update **and** delete together — every table in this project that shipped with only a select policy needed a follow-up migration once insert was attempted. For a user-owned table, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy does this in one statement; don't add anon access unless it's a narrow, explicit, documented exception (see Notes app schema)
 
 ## Design system
 
@@ -140,7 +146,7 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Archive / unarchive (soft hide, not delete) | `archiveNote()` / `unarchiveNote()` in `db.ts`; collapsible Archive section in `NotesSidebar.tsx` |
 | Server-side full-text search (prefix matching) | `searchNotes()` in `db.ts` against `notes.search_vector` |
 | Search history (last 5, upsert + prune) | `getSearchHistory()` / `recordSearch()` in `db.ts` |
-| Collection sharing via read-only link | `generateShareLink()` / `revokeShareLink()` / `getSharedCollection()` in `db.ts`; `app/shared/[token]/page.tsx` |
+| Collection sharing via read-only link | `generateShareLink()` / `revokeShareLink()` / `getSharedCollection()` in `db.ts`; `app/shared/[token]/page.tsx`; the one narrow anon-read exception in an otherwise fully user-scoped schema |
 | Dark / light theme toggle | `NotesSidebar.tsx` — `toggleTheme()` (same `localStorage.theme` mechanism as the doc-manager) |
 
 ### Authentication (`/workspace`)
@@ -150,4 +156,4 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Email/password sign-up, sign-in, sign-out | `app/lib/auth.ts`; `app/login/page.tsx`, `app/signup/page.tsx` |
 | Google sign-in (OAuth/PKCE) | `signInWithGoogleAction()` in `auth.ts`; `app/auth/callback/route.ts` |
 | Session refresh on every request | `app/lib/supabase/middleware.ts`, wired up in root `proxy.ts` |
-| Server-side route protection for `/workspace` | `app/workspace/layout.tsx` — checks `getClaims()`, redirects to `/login` |
+| Server-side route protection for `/workspace` and `/notes` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks both path prefixes too, as a first line of defense |

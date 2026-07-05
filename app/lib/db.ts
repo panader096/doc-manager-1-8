@@ -321,7 +321,7 @@ export async function recordSearch(query: string): Promise<void> {
   const supabase = createClient()
   const { error: upsertError } = await supabase
     .from('search_history')
-    .upsert({ query: trimmed, searched_at: new Date().toISOString() }, { onConflict: 'query' })
+    .upsert({ query: trimmed, searched_at: new Date().toISOString() }, { onConflict: 'user_id,query' })
   if (upsertError) throw upsertError
 
   const { data, error: listError } = await supabase

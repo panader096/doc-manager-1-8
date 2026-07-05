@@ -4,10 +4,9 @@ import { signOutAction } from '../lib/auth'
 
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
-  const claims = data?.claims
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!claims) {
+  if (!user) {
     redirect('/login')
   }
 
@@ -18,7 +17,7 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <span className="text-[13px]" style={{ color: 'var(--text-2)' }}>
-          {claims.email}
+          {user.email}
         </span>
         <form action={signOutAction}>
           <button

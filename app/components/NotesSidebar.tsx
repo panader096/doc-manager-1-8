@@ -10,6 +10,7 @@ import {
   generateShareLink, revokeShareLink,
   NoteListItem, Collection,
 } from '../lib/db'
+import { signOutAction } from '../lib/auth'
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -699,7 +700,7 @@ export default function NotesSidebar() {
         )}
       </div>
 
-      <div className="px-3 py-2.5" style={{ borderTop: '1px solid var(--border)' }}>
+      <div className="px-3 py-2.5 flex items-center justify-between" style={{ borderTop: '1px solid var(--border)' }}>
         <button
           onClick={toggleTheme}
           suppressHydrationWarning
@@ -708,6 +709,15 @@ export default function NotesSidebar() {
         >
           {theme === 'light' ? 'Dark' : 'Light'}
         </button>
+        <form action={signOutAction}>
+          <button
+            type="submit"
+            className="text-[12px] transition-colors"
+            style={{ color: 'var(--text-2)' }}
+          >
+            Sign out
+          </button>
+        </form>
       </div>
     </aside>
   )

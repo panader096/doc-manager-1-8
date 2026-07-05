@@ -21,10 +21,12 @@ export async function updateSession(request: NextRequest) {
     },
   )
 
-  const { data } = await supabase.auth.getClaims()
-  const claims = data?.claims
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!claims && request.nextUrl.pathname.startsWith('/workspace')) {
+  const isProtectedPath = request.nextUrl.pathname.startsWith('/workspace')
+    || request.nextUrl.pathname.startsWith('/notes')
+
+  if (!user && isProtectedPath) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
