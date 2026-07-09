@@ -97,7 +97,8 @@ export default function NotesSidebar() {
   function toggleActiveTag(tag: string) {
     setActiveTags(prev => {
       const next = new Set(prev)
-      next.has(tag) ? next.delete(tag) : next.add(tag)
+      if (next.has(tag)) next.delete(tag)
+      else next.add(tag)
       return next
     })
   }
@@ -105,7 +106,8 @@ export default function NotesSidebar() {
   function toggleCollapse(key: number | 'uncollected' | 'archive') {
     setCollapsed(prev => {
       const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }

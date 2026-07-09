@@ -74,7 +74,8 @@ export default function Sidebar() {
   function toggleActiveTag(tag: string) {
     setActiveTags((prev) => {
       const next = new Set(prev);
-      next.has(tag) ? next.delete(tag) : next.add(tag);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
       return next;
     });
   }
@@ -135,7 +136,8 @@ export default function Sidebar() {
   function toggleFolderCollapse(id: string) {
     setCollapsedFolders((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
