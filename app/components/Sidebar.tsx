@@ -10,6 +10,7 @@ import {
   exportWorkspace, importWorkspace,
   Doc, Folder,
 } from '../lib/documents';
+import { toggleInSet } from '../lib/utils';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -72,12 +73,7 @@ export default function Sidebar() {
 
   // ── Tag filter ─────────────────────────────────────────────────────────────
   function toggleActiveTag(tag: string) {
-    setActiveTags((prev) => {
-      const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag);
-      else next.add(tag);
-      return next;
-    });
+    setActiveTags((prev) => toggleInSet(prev, tag));
   }
 
   const allTags = Array.from(new Set(docs.flatMap((d) => d.tags ?? [])));
@@ -134,12 +130,7 @@ export default function Sidebar() {
   }
 
   function toggleFolderCollapse(id: string) {
-    setCollapsedFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setCollapsedFolders((prev) => toggleInSet(prev, id));
   }
 
   function initiateDeleteFolder(folder: Folder) {

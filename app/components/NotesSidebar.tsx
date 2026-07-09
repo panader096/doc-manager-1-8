@@ -11,6 +11,7 @@ import {
   NoteListItem, Collection,
 } from '../lib/db'
 import { signOutAction } from '../lib/auth'
+import { toggleInSet } from '../lib/utils'
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -95,21 +96,11 @@ export default function NotesSidebar() {
   }, [editingCollectionId])
 
   function toggleActiveTag(tag: string) {
-    setActiveTags(prev => {
-      const next = new Set(prev)
-      if (next.has(tag)) next.delete(tag)
-      else next.add(tag)
-      return next
-    })
+    setActiveTags(prev => toggleInSet(prev, tag))
   }
 
   function toggleCollapse(key: number | 'uncollected' | 'archive') {
-    setCollapsed(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    setCollapsed(prev => toggleInSet(prev, key))
   }
 
   function pinnedFirst(a: NoteListItem, b: NoteListItem): number {
