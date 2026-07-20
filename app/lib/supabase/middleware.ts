@@ -25,6 +25,7 @@ export async function updateSession(request: NextRequest) {
 
   const isProtectedPath = request.nextUrl.pathname.startsWith('/workspace')
     || request.nextUrl.pathname.startsWith('/notes')
+    || request.nextUrl.pathname.startsWith('/journal')
 
   if (!user && isProtectedPath) {
     const url = request.nextUrl.clone()

@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-This repo now contains two apps sharing one Supabase project:
+This repo now contains three apps sharing one Supabase project:
 
 - **Doc manager** (`/docs`) — the original personal document management app. Documents have a unique URL (e.g. `/docs/abc123`); data was originally localStorage-only and is being migrated to Supabase. Still fully public, no login required.
 - **Notes app** (`/notes`) — a Supabase-native notes app with collections, tags, search, pinning, archiving, and collection sharing via link. **Requires signing in** — every note, collection, tag, and search-history row belongs to exactly one user (`user_id`, enforced by RLS), so each signed-in user only ever sees their own data. The one deliberate exception: `/shared/[token]` stays anonymously readable, since that's the point of a share link.
-- **Workspace** (`/workspace`) — a minimal placeholder area proving out Supabase Auth (email/password, Google, and GitHub). Requires signing in, same as `/notes`.
+- **Personal Journal** (`/journal`) — a Supabase-native daily journal: one entry per calendar day per user, editable, full-text searchable, one optional image per entry. **Requires signing in**, same user-scoped RLS pattern as notes, with zero anon surface anywhere (no sharing feature exists for this app).
+- **Workspace** (`/workspace`) — a minimal placeholder area proving out Supabase Auth (email/password, Google, and GitHub). Requires signing in, same as `/notes` and `/journal`.
 
 ## User experience
 
@@ -23,6 +24,12 @@ Each document has its own URL (`/docs/abc123`) so bookmarking or sharing a link 
 - **Right content area** (`NoteEditor.tsx`) — title, body (autosaves), a collection picker, and a tag editor
 - Notes can be pinned (float to the top of their collection), archived (hidden from the main view without deleting), and moved between collections by dragging
 - A collection can be shared read-only via a generated link at `/shared/[token]` — no auth, no sidebar, view-only
+
+**Personal Journal** is also a two-pane workspace:
+- **Left sidebar** (`JournalSidebar.tsx`) — entries listed by date (newest first), a "Today" button that opens today's entry or creates it if it doesn't exist yet, live full-text search, and a dark/light toggle at the bottom
+- **Right content area** (`JournalEditor.tsx`) — the entry's date (read-only), title, body (autosaves), and a single optional image
+- No tags, no collections, no export, no sharing — deliberately narrower in scope than the notes app
+- A signed-in-only header (workspace link, user email, sign-out) sits above the two panes
 
 ## Stack
 - Next.js with the App Router
@@ -39,6 +46,8 @@ Run `npm run dev`. The app runs at http://localhost:3000.
 - `/notes` — notes home (empty state / select-a-note prompt)
 - `/notes/[id]` — individual note, where `id` is the note's numeric `notes.id`
 - `/shared/[token]` — public, read-only view of a collection shared via `collections.share_token`; no sidebar, no auth
+- `/journal` — journal home (empty state / select-or-start-today prompt)
+- `/journal/[id]` — individual journal entry, where `id` is the entry's numeric `journal_entries.id`
 - `/login` — sign in with email/password or Google
 - `/signup` — create an account with email/password
 - `/forgot-password` — request a password-reset email
@@ -64,8 +73,9 @@ Each app has exactly one data-access module. **No component or page may import a
 
 - **Doc manager**: `app/lib/documents.ts`. The `Doc` and `Folder` interfaces there are the canonical shapes; extend them first before touching any other file.
 - **Notes app**: `app/lib/db.ts`. The `Note`, `NoteListItem`, `NoteTag`, `Collection`, and `Tag` interfaces there are the canonical shapes; extend them first before touching any other file.
+- **Personal Journal**: `app/lib/journal.ts`. The `JournalEntry` interface there is the canonical shape; extend it first before touching any other file.
 
-For either app: add a new named function to the relevant module for every new data operation. Schema changes (new tables, columns, indexes, RLS policies) go in `supabase/migrations/` as numbered SQL files.
+For any app: add a new named function to the relevant module for every new data operation. Schema changes (new tables, columns, indexes, RLS policies) go in `supabase/migrations/` as numbered SQL files.
 
 ### Notes app schema
 
@@ -85,6 +95,16 @@ One optional image per note, stored in the private `note-images` Storage bucket 
 
 Path shape: `{user_id}/{note_id}/image.{ext}` — a stable filename per note, so re-uploading replaces the current image (`uploadNoteImage()` in `db.ts` deletes the old object first if the extension changed, so nothing is orphaned). `storage.objects` RLS mirrors the table pattern: one `for all to authenticated` policy scoped to `(storage.foldername(name))[1] = auth.uid()::text` (the owner's folder), plus one narrow anon `SELECT`-only policy extending the `/shared/[token]` exception above to cover images on notes within a shared collection. **When writing a Storage policy that joins back to `notes`/`collections` inside an `EXISTS` subquery, qualify `storage.objects.name` explicitly** — `collections` also has a `name` column, and an unqualified `name` resolves to the closer-scoped one, silently matching nothing (this broke migration `0013` on the first pass; fixed in `0014`).
 
+### Journal app schema
+
+One table: `journal_entries` (`id`, `user_id`, `entry_date` date, `title`, `body`, `image_path` nullable text, `search_vector` generated tsvector column with a GIN index, `created_at`, `updated_at`), with `unique (user_id, entry_date)` enforcing one entry per calendar day per user at the database level — not just in the UI. No tags, no collections, no `note_tags`-equivalent join table.
+
+Same user-scoping pattern as notes: `user_id uuid not null default auth.uid() references auth.users(id)`, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy covering select/insert/update/delete. **Zero anon access anywhere** — unlike notes, the journal has no sharing feature, so there is no anon exception at all; don't add one without a documented reason.
+
+### Journal images (Supabase Storage)
+
+Same pattern as note images: one optional image per entry, private `journal-images` bucket, `journal_entries.image_path` holds the Storage object path, rendering goes through a signed URL from `getEntryImageUrl()`. Path shape `{user_id}/{entry_id}/image.{ext}`. `storage.objects` RLS is a single `for all to authenticated` policy scoped to `(storage.foldername(name))[1] = auth.uid()::text` — no anon read policy, since (again) there's no sharing feature for this app.
+
 ### Supabase client wrappers
 
 Three thin wrappers own client creation — use the right one, never `createClient()` from `@supabase/ssr` directly:
@@ -102,10 +122,10 @@ The server client must be created inside each function that needs it — never a
 **Rule for agent:** Every signed-in-only page must verify the user's session with the Supabase Auth server before it loads, and redirect to the sign-in page if the user is not signed in.
 
 - Use Supabase Auth for all sign-in and session handling — never build custom auth or store passwords yourself
-- Every page under `/workspace` **and every page under `/notes`** requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in
+- Every page under `/workspace`, `/notes`, **and `/journal`** requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in. The proxy (`app/lib/supabase/middleware.ts`) enforces this as a first line of defense for all three path prefixes — every new signed-in-only app added to this repo must be added to its `isProtectedPath` check, not just given its own layout-level check
 - After a successful sign-in, redirect to `/workspace`
 - After sign-out, redirect to `/login`. Do not rely on the browser-side session alone.
-- A sign-out control must be reachable from within `/notes`, not just `/workspace` (`NotesSidebar.tsx`'s footer)
+- A sign-out control must be reachable from within `/notes` and `/journal`, not just `/workspace` (`NotesSidebar.tsx`'s footer; `journal/layout.tsx`'s header)
 - Never put the service-role/secret key in any `NEXT_PUBLIC_`-prefixed env var, or anywhere client-accessible — only the two keys listed under Credentials belong in this app at all
 
 Server-side session checks use **`supabase.auth.getUser()`** — not `getSession()` (never trust it server-side; it can be spoofed when cookie storage is shared with the client) and, in this project, not `getClaims()` either, even though it's Supabase's newer/faster recommendation — this project's rubric specifically calls for `getUser()`, so that's the standard here. If a diff introduces `getSession()` in server code (a Server Component, Route Handler, Server Action, or the proxy), flag it before merging. All auth calls (sign up, sign in, sign in with Google, sign out) go through `app/lib/auth.ts` — the same single-source-of-truth convention as `documents.ts`/`db.ts`, just for auth instead of data.
@@ -119,6 +139,7 @@ Server-side session checks use **`supabase.auth.getUser()`** — not `getSession
 - Keep all styling within the existing Tailwind CSS + CSS custom-property design system — no new UI libraries
 - When adding a new feature that touches data: (1) update the interface in `documents.ts` or `db.ts` (whichever app), (2) add the migration SQL in `supabase/migrations/`, (3) add the function in that same module, (4) wire up the UI last
 - New RLS policies: cover select **and** insert **and** update **and** delete together — every table in this project that shipped with only a select policy needed a follow-up migration once insert was attempted. For a user-owned table, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy does this in one statement; don't add anon access unless it's a narrow, explicit, documented exception (see Notes app schema)
+- Security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`) are set in `next.config.ts`'s `headers()` function — don't duplicate them in `vercel.json` or a route handler. `script-src`/`style-src` include `'unsafe-inline'` deliberately (Next.js's own inline hydration scripts, and this project's inline `style={{ var(--x) }}` design system) — `frame-ancestors 'none'` plus `X-Frame-Options: DENY` are what actually stop clickjacking. If the app ever gains a new external domain dependency (fonts, images, APIs), it needs to be added to the relevant CSP directive there or it will be silently blocked
 
 ## Design system
 
@@ -163,6 +184,16 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Dark / light theme toggle | `NotesSidebar.tsx` — `toggleTheme()` (same `localStorage.theme` mechanism as the doc-manager) |
 | One image per note via Supabase Storage (not base64), visible in shared links too | `uploadNoteImage()` / `removeNoteImage()` / `getNoteImageUrl()` in `db.ts`; upload/preview UI in `NoteEditor.tsx`; display in `SharedCollectionView.tsx`; private `note-images` bucket, see Note images above |
 
+### Personal Journal app (`/journal`)
+
+| Feature | Location |
+|---|---|
+| Entry create / edit / delete, autosave | `JournalEditor.tsx`, `JournalSidebar.tsx`; `createEntry()` (via `getOrCreateTodayEntry()`) / `updateEntry()` / `deleteEntry()` in `journal.ts` |
+| One entry per calendar day per user | `unique (user_id, entry_date)` constraint (`0015_journal_entries_table.sql`); `getOrCreateTodayEntry()` in `journal.ts` opens today's entry if it exists instead of creating a duplicate |
+| Server-side full-text search | `searchEntries()` in `journal.ts` against `journal_entries.search_vector` |
+| One image per entry via Supabase Storage (not base64) | `uploadEntryImage()` / `removeEntryImage()` / `getEntryImageUrl()` in `journal.ts`; upload/preview UI in `JournalEditor.tsx`; private `journal-images` bucket, see Journal images above |
+| Dark / light theme toggle | `JournalSidebar.tsx` — `toggleTheme()` (same `localStorage.theme` mechanism as notes/doc-manager) |
+
 ### Authentication (`/workspace`)
 
 | Feature | Location |
@@ -171,4 +202,4 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Google / GitHub sign-in (OAuth/PKCE) | `signInWithGoogleAction()` / `signInWithGitHubAction()` in `auth.ts`; both share the same provider-agnostic `app/auth/callback/route.ts` |
 | Password reset via email | `requestPasswordResetAction()` / `updatePasswordAction()` in `auth.ts`; `app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/auth/confirm/route.ts` (`verifyOtp()` with `token_hash`+`type` — the current documented pattern for email-link verification, distinct from the OAuth `code` exchange `/auth/callback` uses) |
 | Session refresh on every request | `app/lib/supabase/middleware.ts`, wired up in root `proxy.ts` |
-| Server-side route protection for `/workspace` and `/notes` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks both path prefixes too, as a first line of defense |
+| Server-side route protection for `/workspace`, `/notes`, and `/journal` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` / `app/journal/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks all three path prefixes too, as a first line of defense |
