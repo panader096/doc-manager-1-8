@@ -1,11 +1,8 @@
 export default function JournalPage() {
   return (
-    <div className="flex flex-col items-center justify-center gap-2" style={{ height: 'calc(100vh - 49px)' }}>
-      <h1 className="text-[20px] font-bold" style={{ color: 'var(--text-1)' }}>
-        Personal Journal
-      </h1>
+    <div className="flex h-full items-center justify-center">
       <p className="text-[13px]" style={{ color: 'var(--text-3)' }}>
-        To be constructed.
+        Select an entry, or start today&apos;s to get started.
       </p>
     </div>
   )

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '../lib/supabase/server'
 import { signOutAction } from '../lib/auth'
+import JournalSidebar from '../components/JournalSidebar'
 
 export default async function JournalLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -12,9 +13,9 @@ export default async function JournalLayout({ children }: { children: React.Reac
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-app)' }}>
+    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: 'var(--bg-app)' }}>
       <header
-        className="flex items-center justify-between px-6 py-3"
+        className="flex items-center justify-between px-6 py-3 flex-shrink-0"
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <Link
@@ -39,7 +40,12 @@ export default async function JournalLayout({ children }: { children: React.Reac
           </form>
         </div>
       </header>
-      <main>{children}</main>
+      <div className="flex flex-1 min-h-0">
+        <JournalSidebar />
+        <main className="flex-1 min-w-0 overflow-auto" style={{ backgroundColor: 'var(--bg-app)' }}>
+          {children}
+        </main>
+      </div>
     </div>
   )
 }
