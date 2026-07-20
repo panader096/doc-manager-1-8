@@ -40,6 +40,9 @@ Each document has its own URL (`/docs/abc123`) so bookmarking or sharing a link 
 ## Running the app
 Run `npm run dev`. The app runs at http://localhost:3000.
 
+## E2E tests
+Playwright tests live in `e2e/`, run with `npm run test:e2e` (`playwright.config.ts` reuses an already-running dev server on port 3000 rather than starting a second one). Tests sign in as a dedicated test account (`paulbakker90+e2etest@gmail.com`, seeded directly into `auth.users`/`auth.identities` via SQL rather than the real signup form, since Supabase's built-in test mailer hard-caps confirmation emails at a couple per hour — see `docs/REFLECTION-journal.md`) — never use a real user's account for automated tests.
+
 ## Routing
 - `/` — document list (home)
 - `/docs/[id]` — individual document page, where `id` is a unique identifier
@@ -104,6 +107,10 @@ Same user-scoping pattern as notes: `user_id uuid not null default auth.uid() re
 ### Journal images (Supabase Storage)
 
 Same pattern as note images: one optional image per entry, private `journal-images` bucket, `journal_entries.image_path` holds the Storage object path, rendering goes through a signed URL from `getEntryImageUrl()`. Path shape `{user_id}/{entry_id}/image.{ext}`. `storage.objects` RLS is a single `for all to authenticated` policy scoped to `(storage.foldername(name))[1] = auth.uid()::text` — no anon read policy, since (again) there's no sharing feature for this app.
+
+### Profile photos (Supabase Storage)
+
+One optional profile photo per signed-in user, shown on `/workspace`. Private `profile-photos` bucket, path `{user_id}/photo.{ext}`. Unlike notes/journal images, there is **no database table** for this — the photo's existence and path are looked up via `storage.objects.list()` in `app/lib/profile.ts` (there is at most one object per user's folder), since nothing else about a "profile" needs tracking yet. `storage.objects` RLS is the same single `for all to authenticated` policy pattern scoped to `(storage.foldername(name))[1] = auth.uid()::text` — no anon access.
 
 ### Supabase client wrappers
 
@@ -193,6 +200,7 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Server-side full-text search | `searchEntries()` in `journal.ts` against `journal_entries.search_vector` |
 | One image per entry via Supabase Storage (not base64) | `uploadEntryImage()` / `removeEntryImage()` / `getEntryImageUrl()` in `journal.ts`; upload/preview UI in `JournalEditor.tsx`; private `journal-images` bucket, see Journal images above |
 | Dark / light theme toggle | `JournalSidebar.tsx` — `toggleTheme()` (same `localStorage.theme` mechanism as notes/doc-manager) |
+| Delete-confirmation dialog | `JournalSidebar.tsx` — `confirmingDeleteId` state; built test-first, see `docs/REFLECTION-journal.md`'s TDD section and `e2e/journal-delete-confirmation.spec.ts` |
 
 ### Authentication (`/workspace`)
 
@@ -203,3 +211,4 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Password reset via email | `requestPasswordResetAction()` / `updatePasswordAction()` in `auth.ts`; `app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/auth/confirm/route.ts` (`verifyOtp()` with `token_hash`+`type` — the current documented pattern for email-link verification, distinct from the OAuth `code` exchange `/auth/callback` uses) |
 | Session refresh on every request | `app/lib/supabase/middleware.ts`, wired up in root `proxy.ts` |
 | Server-side route protection for `/workspace`, `/notes`, and `/journal` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` / `app/journal/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks all three path prefixes too, as a first line of defense |
+| Profile photo (one per user, shown on `/workspace`) | `uploadProfilePhoto()` / `removeProfilePhoto()` / `getProfilePhotoUrl()` in `app/lib/profile.ts`; `ProfilePhoto.tsx`; private `profile-photos` bucket, see Profile photos above |

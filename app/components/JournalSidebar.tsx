@@ -20,6 +20,7 @@ export default function JournalSidebar() {
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [hoveredId, setHoveredId] = useState<number | null>(null)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null)
   const [query, setQuery] = useState('')
   const [matchingIds, setMatchingIds] = useState<Set<number> | null>(null)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -65,9 +66,16 @@ export default function JournalSidebar() {
     router.push(`/journal/${entry.id}`)
   }
 
-  async function handleDelete(e: React.MouseEvent, id: number) {
+  function handleDeleteClick(e: React.MouseEvent, id: number) {
     e.stopPropagation()
     e.preventDefault()
+    setConfirmingDeleteId(id)
+  }
+
+  async function confirmDelete() {
+    const id = confirmingDeleteId
+    if (id == null) return
+    setConfirmingDeleteId(null)
     await deleteEntry(id)
     const next = entries.filter(en => en.id !== id)
     setEntries(next)
@@ -88,6 +96,44 @@ export default function JournalSidebar() {
       className="h-full flex flex-col flex-shrink-0"
       style={{ width: 260, backgroundColor: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)' }}
     >
+      {confirmingDeleteId != null && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4"
+          onClick={() => setConfirmingDeleteId(null)}
+        >
+          <div
+            className="rounded-[8px] border p-5 max-w-xs w-full"
+            style={{ backgroundColor: 'var(--bg-modal)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-modal)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="font-semibold text-[14px] mb-1" style={{ color: 'var(--text-1)' }}>
+              Delete this entry?
+            </p>
+            <p className="text-[12px] mb-4" style={{ color: 'var(--text-2)' }}>
+              This can&rsquo;t be undone.
+            </p>
+            <div className="flex gap-1.5">
+              <button
+                onClick={confirmDelete}
+                className="flex-1 text-[12px] font-medium rounded-[4px] px-3 py-1.5 hover:opacity-80 transition-opacity"
+                style={{ backgroundColor: '#ef4444', color: '#fff' }}
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setConfirmingDeleteId(null)}
+                className="flex-1 text-[12px] rounded-[4px] border px-3 py-1.5 transition-colors"
+                style={{ color: 'var(--text-2)', borderColor: 'var(--border)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="px-3 pt-3 pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-semibold tracking-widest uppercase" style={{ color: 'var(--text-3)' }}>
@@ -139,6 +185,7 @@ export default function JournalSidebar() {
             return (
               <div
                 key={entry.id}
+                data-testid="journal-entry-row"
                 onClick={() => router.push(`/journal/${entry.id}`)}
                 onMouseEnter={() => setHoveredId(entry.id)}
                 onMouseLeave={() => setHoveredId(null)}
@@ -158,7 +205,7 @@ export default function JournalSidebar() {
                 </div>
                 {hoveredId === entry.id && (
                   <button
-                    onClick={e => handleDelete(e, entry.id)}
+                    onClick={e => handleDeleteClick(e, entry.id)}
                     aria-label="Delete entry"
                     className="flex-shrink-0 text-[16px] leading-none opacity-40 hover:opacity-80 transition-opacity cursor-pointer mt-0.5"
                     style={{ color: 'var(--text-2)' }}

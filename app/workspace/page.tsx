@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '../lib/supabase/server'
+import ProfilePhoto from '../components/ProfilePhoto'
 
 const APPS = [
   { name: 'Sprint 1 - Document Manager', description: 'Documents, folders, and Markdown export.', href: '/docs' },
@@ -13,13 +14,16 @@ export default async function WorkspacePage() {
 
   return (
     <div className="flex flex-col items-center gap-8 px-6" style={{ paddingTop: '12vh' }}>
-      <div className="flex flex-col items-center gap-2">
-        <h1 className="text-[20px] font-bold" style={{ color: 'var(--text-1)' }}>
-          Welcome to your workspace
-        </h1>
-        <p className="text-[13px]" style={{ color: 'var(--text-2)' }}>
-          Signed in as {user?.email}
-        </p>
+      <div className="flex flex-col items-center gap-3">
+        <ProfilePhoto />
+        <div className="flex flex-col items-center gap-2">
+          <h1 className="text-[20px] font-bold" style={{ color: 'var(--text-1)' }}>
+            Welcome to your workspace
+          </h1>
+          <p className="text-[13px]" style={{ color: 'var(--text-2)' }}>
+            Signed in as {user?.email}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2 w-full max-w-sm">
