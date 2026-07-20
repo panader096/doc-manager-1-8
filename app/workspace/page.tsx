@@ -2,8 +2,9 @@ import Link from 'next/link'
 import { createClient } from '../lib/supabase/server'
 
 const APPS = [
-  { name: 'Notes', description: 'Collections, tags, search, and more.', href: '/notes' },
-  { name: 'Doc Manager', description: 'Documents, folders, and Markdown export.', href: '/docs' },
+  { name: 'Sprint 1 - Document Manager', description: 'Documents, folders, and Markdown export.', href: '/docs' },
+  { name: 'Sprint 2 - Notes app', description: 'Collections, tags, search, and more.', href: '/notes' },
+  { name: 'Sprint 3 - Personal Journal', description: 'A private space for daily entries.', href: '/journal' },
 ]
 
 export default async function WorkspacePage() {
