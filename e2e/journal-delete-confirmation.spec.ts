@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 // Dedicated E2E test account for this project -- not a real user.
-const TEST_EMAIL = 'paulbakker90+e2etest@gmail.com';
-const TEST_PASSWORD = 'E2eTestJournal!2026';
+// Sourced from .env.local (gitignored), not hardcoded -- see playwright.config.ts.
+const TEST_EMAIL = process.env.E2E_TEST_EMAIL!;
+const TEST_PASSWORD = process.env.E2E_TEST_PASSWORD!;
 
 test('deleting a journal entry requires confirmation', async ({ page }) => {
   await page.goto('/login');
