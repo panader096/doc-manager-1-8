@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { getMessages, sendMessage, type ChatMessage } from '../lib/chat'
+import { getMessages, type ChatMessage } from '../lib/chat'
+import { sendMessage } from '../lib/chat-actions'
 
 let nextTempId = -1
 
