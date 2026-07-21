@@ -43,11 +43,13 @@ export default function ChatView() {
 
     try {
       const { userMessage, assistantMessage } = await sendMessage(content)
-      setMessages(prev => [
-        ...prev.filter(m => m.id !== optimisticMessage.id),
-        userMessage,
-        assistantMessage,
-      ])
+      setMessages(prev => {
+        const byId = new Map(prev.map(m => [m.id, m]))
+        byId.delete(optimisticMessage.id)
+        byId.set(userMessage.id, userMessage)
+        byId.set(assistantMessage.id, assistantMessage)
+        return Array.from(byId.values()).sort((a, b) => a.created_at.localeCompare(b.created_at))
+      })
     } catch {
       setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id))
       setInput(content)
