@@ -6,6 +6,7 @@ const APPS = [
   { name: 'Sprint 1 - Document Manager', description: 'Documents, folders, and Markdown export.', href: '/docs' },
   { name: 'Sprint 2 - Notes app', description: 'Collections, tags, search, and more.', href: '/notes' },
   { name: 'Sprint 3 - Personal Journal', description: 'A private space for daily entries.', href: '/journal' },
+  { name: 'Sprint 3.6 - Chat', description: 'A simple AI chat that remembers the conversation.', href: '/chat' },
 ]
 
 export default async function WorkspacePage() {
