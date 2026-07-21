@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-This repo now contains three apps sharing one Supabase project:
+This repo now contains five apps sharing one Supabase project:
 
 - **Doc manager** (`/docs`) — the original personal document management app. Documents have a unique URL (e.g. `/docs/abc123`); data was originally localStorage-only and is being migrated to Supabase. Still fully public, no login required.
 - **Notes app** (`/notes`) — a Supabase-native notes app with collections, tags, search, pinning, archiving, and collection sharing via link. **Requires signing in** — every note, collection, tag, and search-history row belongs to exactly one user (`user_id`, enforced by RLS), so each signed-in user only ever sees their own data. The one deliberate exception: `/shared/[token]` stays anonymously readable, since that's the point of a share link.
 - **Personal Journal** (`/journal`) — a Supabase-native daily journal: one entry per calendar day per user, editable, full-text searchable, one optional image per entry. **Requires signing in**, same user-scoped RLS pattern as notes, with zero anon surface anywhere (no sharing feature exists for this app).
-- **Workspace** (`/workspace`) — a minimal placeholder area proving out Supabase Auth (email/password, Google, and GitHub). Requires signing in, same as `/notes` and `/journal`.
+- **Sprint 3.6 - Chat** (`/chat`) — a single, persistent AI chat conversation per signed-in user, backed by OpenRouter. **Requires signing in**, same user-scoped RLS pattern as notes/journal, zero anon surface. See "AI model calls" below for the server-only constraint on this app's model calls.
+- **Workspace** (`/workspace`) — a minimal placeholder area proving out Supabase Auth (email/password, Google, and GitHub). Requires signing in, same as `/notes`, `/journal`, and `/chat`.
 
 ## User experience
 
@@ -31,6 +32,13 @@ Each document has its own URL (`/docs/abc123`) so bookmarking or sharing a link 
 - No tags, no collections, no export, no sharing — deliberately narrower in scope than the notes app
 - A signed-in-only header (workspace link, user email, sign-out) sits above the two panes
 
+**Sprint 3.6 - Chat** is a single-pane workspace (no sidebar — one conversation per user, nothing to list):
+- **Message list** (`ChatView.tsx`) — scrollable history, user messages right-aligned in an accent bubble, assistant replies left-aligned in a `--bg-modal` bubble, auto-scrolls to the newest message
+- **Input area** — a textarea (Enter to send, Shift+Enter for a newline) and a Send button, pinned to the bottom
+- The full conversation is replayed to the model on every turn (via `sendMessage()` in `chat-actions.ts`), which is how it "remembers" earlier turns — no separate memory store
+- No threads, no streaming, no message editing/deletion — see `docs/superpowers/specs/2026-07-21-sprint-3.6-chat-design.md` for the full list of deliberate non-goals
+- A signed-in-only header (workspace link, user email, sign-out) sits above the message list, same as journal
+
 ## Stack
 - Next.js with the App Router
 - TypeScript
@@ -51,6 +59,7 @@ Playwright tests live in `e2e/`, run with `npm run test:e2e` (`playwright.config
 - `/shared/[token]` — public, read-only view of a collection shared via `collections.share_token`; no sidebar, no auth
 - `/journal` — journal home (empty state / select-or-start-today prompt)
 - `/journal/[id]` — individual journal entry, where `id` is the entry's numeric `journal_entries.id`
+- `/chat` — the single AI chat conversation for the signed-in user (Sprint 3.6 - Chat)
 - `/login` — sign in with email/password or Google
 - `/signup` — create an account with email/password
 - `/forgot-password` — request a password-reset email
@@ -77,6 +86,7 @@ Each app has exactly one data-access module. **No component or page may import a
 - **Doc manager**: `app/lib/documents.ts`. The `Doc` and `Folder` interfaces there are the canonical shapes; extend them first before touching any other file.
 - **Notes app**: `app/lib/db.ts`. The `Note`, `NoteListItem`, `NoteTag`, `Collection`, and `Tag` interfaces there are the canonical shapes; extend them first before touching any other file.
 - **Personal Journal**: `app/lib/journal.ts`. The `JournalEntry` interface there is the canonical shape; extend it first before touching any other file.
+- **Sprint 3.6 - Chat**: `app/lib/chat.ts` **and** `app/lib/chat-actions.ts` — a deliberate two-file exception to "exactly one module," forced by Next.js: it disallows an inline `'use server'` Server Action inside a plain file that's imported by a Client Component (confirmed by an actual `next build` failure during implementation). `chat.ts` holds the canonical `ChatMessage` interface and `getMessages()` (a client-safe read, same pattern as `journal.ts`); `chat-actions.ts` is a file-level `'use server'` module holding only `sendMessage()` (inserts the user message, replays full history to OpenRouter via `app/lib/ai.ts`, inserts the reply) — same file-level-`'use server'` convention as `auth.ts`. Extend `chat.ts` for new reads, `chat-actions.ts` for new server-only mutations.
 
 For any app: add a new named function to the relevant module for every new data operation. Schema changes (new tables, columns, indexes, RLS policies) go in `supabase/migrations/` as numbered SQL files.
 
@@ -108,6 +118,14 @@ Same user-scoping pattern as notes: `user_id uuid not null default auth.uid() re
 
 Same pattern as note images: one optional image per entry, private `journal-images` bucket, `journal_entries.image_path` holds the Storage object path, rendering goes through a signed URL from `getEntryImageUrl()`. Path shape `{user_id}/{entry_id}/image.{ext}`. `storage.objects` RLS is a single `for all to authenticated` policy scoped to `(storage.foldername(name))[1] = auth.uid()::text` — no anon read policy, since (again) there's no sharing feature for this app.
 
+### Chat app schema
+
+One table: `chat_messages` (`id`, `user_id`, `role` text constrained via `check (role in ('user', 'assistant'))`, `content`, `created_at`) — an append-only log, one ongoing conversation per user. No threads, no title, no `updated_at` (messages aren't edited).
+
+Same user-scoping pattern as notes/journal: `user_id uuid not null default auth.uid() references auth.users(id)`, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy covering select/insert/update/delete. **Zero anon access anywhere** — no sharing feature for this app either.
+
+No Storage bucket — chat has no images.
+
 ### Profile photos (Supabase Storage)
 
 One optional profile photo per signed-in user, shown on `/workspace`. Private `profile-photos` bucket, path `{user_id}/photo.{ext}`. Unlike notes/journal images, there is **no database table** for this — the photo's existence and path are looked up via `storage.objects.list()` in `app/lib/profile.ts` (there is at most one object per user's folder), since nothing else about a "profile" needs tracking yet. `storage.objects` RLS is the same single `for all to authenticated` policy pattern scoped to `(storage.foldername(name))[1] = auth.uid()::text` — no anon access.
@@ -129,10 +147,10 @@ The server client must be created inside each function that needs it — never a
 **Rule for agent:** Every signed-in-only page must verify the user's session with the Supabase Auth server before it loads, and redirect to the sign-in page if the user is not signed in.
 
 - Use Supabase Auth for all sign-in and session handling — never build custom auth or store passwords yourself
-- Every page under `/workspace`, `/notes`, **and `/journal`** requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in. The proxy (`app/lib/supabase/middleware.ts`) enforces this as a first line of defense for all three path prefixes — every new signed-in-only app added to this repo must be added to its `isProtectedPath` check, not just given its own layout-level check
+- Every page under `/workspace`, `/notes`, `/journal`, **and `/chat`** requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in. The proxy (`app/lib/supabase/middleware.ts`) enforces this as a first line of defense for all four path prefixes — every new signed-in-only app added to this repo must be added to its `isProtectedPath` check, not just given its own layout-level check
 - After a successful sign-in, redirect to `/workspace`
 - After sign-out, redirect to `/login`. Do not rely on the browser-side session alone.
-- A sign-out control must be reachable from within `/notes` and `/journal`, not just `/workspace` (`NotesSidebar.tsx`'s footer; `journal/layout.tsx`'s header)
+- A sign-out control must be reachable from within `/notes`, `/journal`, and `/chat`, not just `/workspace` (`NotesSidebar.tsx`'s footer; `journal/layout.tsx`'s header; `chat/layout.tsx`'s header)
 - Never put the service-role/secret key in any `NEXT_PUBLIC_`-prefixed env var, or anywhere client-accessible — only the two keys listed under Credentials belong in this app at all
 
 Server-side session checks use **`supabase.auth.getUser()`** — not `getSession()` (never trust it server-side; it can be spoofed when cookie storage is shared with the client) and, in this project, not `getClaims()` either, even though it's Supabase's newer/faster recommendation — this project's rubric specifically calls for `getUser()`, so that's the standard here. If a diff introduces `getSession()` in server code (a Server Component, Route Handler, Server Action, or the proxy), flag it before merging. All auth calls (sign up, sign in, sign in with Google, sign out) go through `app/lib/auth.ts` — the same single-source-of-truth convention as `documents.ts`/`db.ts`, just for auth instead of data.
@@ -141,6 +159,7 @@ Server-side session checks use **`supabase.auth.getUser()`** — not `getSession
 
 - All model calls must happen server-side only. Never call the OpenRouter API from browser code.
 - `OPENROUTER_API_KEY` lives in `.env.local` and must never be exposed to the browser (no `NEXT_PUBLIC_` prefix, no passing it to client components).
+- The connection itself lives in `app/lib/ai.ts` (`createChatCompletion()`, defaults to `openai/gpt-4o-mini`), read only from `app/lib/chat-actions.ts`'s `'use server'`-gated `sendMessage()` — the sole caller anywhere in the codebase. Any new feature that calls OpenRouter should follow the same shape: the call lives in a file-level `'use server'` module, never in a plain module imported by a Client Component (Next.js rejects inline `'use server'` functions in that shape — see the Sprint 3.6 - Chat data-access entry above).
 
 ## Conventions
 - New pages go inside `app/`
@@ -207,6 +226,15 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Dark / light theme toggle | `JournalSidebar.tsx` — `toggleTheme()` (same `localStorage.theme` mechanism as notes/doc-manager) |
 | Delete-confirmation dialog | `JournalSidebar.tsx` — `confirmingDeleteId` state; built test-first, see `docs/REFLECTION-journal.md`'s TDD section and `e2e/journal-delete-confirmation.spec.ts` |
 
+### Sprint 3.6 - Chat app (`/chat`)
+
+| Feature | Location |
+|---|---|
+| Send a message, get an AI reply, full conversational memory | `ChatView.tsx`; `sendMessage()` in `chat-actions.ts` (server-only, replays full history to OpenRouter via `app/lib/ai.ts` on every turn) |
+| Persistent single conversation per user, loaded on mount | `getMessages()` in `chat.ts`; `chat_messages` table, see Chat app schema above |
+| Optimistic send with idempotent merge on the real response | `handleSend()` in `ChatView.tsx` — appends a temp message immediately, then reconciles by `id` via a `Map`-keyed merge (guards against a client-side duplicate-render race found during testing) |
+| e2e smoke test proving memory works end to end | `e2e/chat.spec.ts` — signs in, sends a fact, asks a follow-up, asserts the reply reflects it; makes real OpenRouter calls, not run in CI |
+
 ### Authentication (`/workspace`)
 
 | Feature | Location |
@@ -215,5 +243,5 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Google / GitHub sign-in (OAuth/PKCE) | `signInWithGoogleAction()` / `signInWithGitHubAction()` in `auth.ts`; both share the same provider-agnostic `app/auth/callback/route.ts` |
 | Password reset via email | `requestPasswordResetAction()` / `updatePasswordAction()` in `auth.ts`; `app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/auth/confirm/route.ts` (`verifyOtp()` with `token_hash`+`type` — the current documented pattern for email-link verification, distinct from the OAuth `code` exchange `/auth/callback` uses) |
 | Session refresh on every request | `app/lib/supabase/middleware.ts`, wired up in root `proxy.ts` |
-| Server-side route protection for `/workspace`, `/notes`, and `/journal` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` / `app/journal/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks all three path prefixes too, as a first line of defense |
+| Server-side route protection for `/workspace`, `/notes`, `/journal`, and `/chat` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` / `app/journal/layout.tsx` / `app/chat/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks all four path prefixes too, as a first line of defense |
 | Profile photo (one per user, shown on `/workspace`) | `uploadProfilePhoto()` / `removeProfilePhoto()` / `getProfilePhotoUrl()` in `app/lib/profile.ts`; `ProfilePhoto.tsx`; private `profile-photos` bucket, see Profile photos above |

@@ -15,10 +15,10 @@ export default function ChatView() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    getMessages().then(data => {
-      setMessages(data)
-      setLoading(false)
-    })
+    getMessages()
+      .then(data => setMessages(data))
+      .catch(() => setError("Couldn't load the conversation — try refreshing"))
+      .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {

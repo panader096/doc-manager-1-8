@@ -10,13 +10,16 @@ const SYSTEM_PROMPT = 'You are a helpful assistant.'
 export async function sendMessage(
   content: string,
 ): Promise<{ userMessage: ChatMessage; assistantMessage: ChatMessage }> {
+  const trimmedContent = content.trim()
+  if (!trimmedContent) throw new Error('Message cannot be empty')
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not signed in')
 
   const { data: userMessage, error: insertUserError } = await supabase
     .from('chat_messages')
-    .insert({ role: 'user', content })
+    .insert({ role: 'user', content: trimmedContent })
     .select(MESSAGE_SELECT)
     .single()
   if (insertUserError) throw insertUserError
