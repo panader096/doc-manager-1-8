@@ -137,6 +137,11 @@ The server client must be created inside each function that needs it — never a
 
 Server-side session checks use **`supabase.auth.getUser()`** — not `getSession()` (never trust it server-side; it can be spoofed when cookie storage is shared with the client) and, in this project, not `getClaims()` either, even though it's Supabase's newer/faster recommendation — this project's rubric specifically calls for `getUser()`, so that's the standard here. If a diff introduces `getSession()` in server code (a Server Component, Route Handler, Server Action, or the proxy), flag it before merging. All auth calls (sign up, sign in, sign in with Google, sign out) go through `app/lib/auth.ts` — the same single-source-of-truth convention as `documents.ts`/`db.ts`, just for auth instead of data.
 
+## AI model calls
+
+- All model calls must happen server-side only. Never call the OpenRouter API from browser code.
+- `OPENROUTER_API_KEY` lives in `.env.local` and must never be exposed to the browser (no `NEXT_PUBLIC_` prefix, no passing it to client components).
+
 ## Conventions
 - New pages go inside `app/`
 - Shared UI components go in `app/components/`
