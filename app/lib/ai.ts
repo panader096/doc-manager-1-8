@@ -2,7 +2,8 @@
 // Route Handlers, or Server Actions — never from a 'use client' file.
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
-const DEFAULT_MODEL = 'openai/gpt-4o-mini'
+const DEFAULT_MODEL = 'anthropic/claude-haiku-4.5'
+const DEFAULT_MAX_TOKENS = 1024
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -24,7 +25,7 @@ export async function createChatCompletion(
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ model, messages }),
+    body: JSON.stringify({ model, messages, max_tokens: DEFAULT_MAX_TOKENS }),
   })
 
   if (!response.ok) {

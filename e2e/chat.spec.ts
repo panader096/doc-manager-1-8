@@ -26,3 +26,66 @@ test('sends a message and receives a reply that remembers context', async ({ pag
   const lastMessage = page.locator('main div.whitespace-pre-wrap').last()
   await expect(lastMessage).toContainText(/teal/i)
 })
+
+test('multi-turn conversation: a follow-up reply reflects the earlier turn, not a generic answer', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByRole('textbox', { name: 'Email' }).fill(TEST_EMAIL)
+  await page.getByRole('textbox', { name: 'Password' }).fill(TEST_PASSWORD)
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await page.waitForURL('/workspace')
+
+  await page.goto('/chat')
+
+  // Unique marker per run -- this is a persistent, ever-growing conversation
+  // shared across test runs, so a fixed message string can collide with an
+  // earlier run's copy and break a strict-mode getByText lookup.
+  const marker = Date.now()
+  const firstMessage = `Explain how a rainbow forms, in one sentence. (ref ${marker})`
+  const followupMessage = `Say that again, but simpler. (ref ${marker})`
+
+  await page.getByPlaceholder('Type a message…').fill(firstMessage)
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByText(firstMessage)).toBeVisible()
+  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+
+  await page.getByPlaceholder('Type a message…').fill(followupMessage)
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+
+  const lastMessage = page.locator('main div.whitespace-pre-wrap').last()
+  // A reply that actually remembers the earlier turn re-explains the same
+  // topic (rainbow/light/water); a context-less reply would instead ask
+  // what the user wants repeated, with no topic words at all.
+  await expect(lastMessage).toContainText(/rainbow|light|water|sun|droplet/i)
+  await expect(lastMessage).not.toContainText(/what would you like|could you clarify|not sure what you/i)
+})
+
+test('persistence: messages survive a page refresh', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByRole('textbox', { name: 'Email' }).fill(TEST_EMAIL)
+  await page.getByRole('textbox', { name: 'Password' }).fill(TEST_PASSWORD)
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await page.waitForURL('/workspace')
+
+  await page.goto('/chat')
+
+  const marker = Date.now()
+  const firstMessage = `Persistence test marker-a-${marker}`
+  const secondMessage = `Persistence test marker-b-${marker}`
+
+  await page.getByPlaceholder('Type a message…').fill(firstMessage)
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByText(firstMessage)).toBeVisible()
+  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+
+  await page.getByPlaceholder('Type a message…').fill(secondMessage)
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByText(secondMessage)).toBeVisible()
+  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+
+  await page.reload()
+
+  await expect(page.getByText('Loading…')).not.toBeVisible({ timeout: 15000 })
+  await expect(page.getByText(firstMessage)).toBeVisible()
+  await expect(page.getByText(secondMessage)).toBeVisible()
+})
