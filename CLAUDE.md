@@ -36,6 +36,7 @@ Each document has its own URL (`/docs/abc123`) so bookmarking or sharing a link 
 - **Message list** (`ChatView.tsx`) — scrollable history, user messages right-aligned in an accent bubble, assistant replies left-aligned in a `--bg-modal` bubble, auto-scrolls to the newest message
 - **Input area** — a textarea (Enter to send, Shift+Enter for a newline) and a Send button, pinned to the bottom
 - The full conversation is replayed to the model on every turn (via `sendMessage()` in `chat-actions.ts`), which is how it "remembers" earlier turns — no separate memory store
+- **Sprint 3.7 - RAG:** the model decides for itself whether to search the user's notes, via a `search_notes` tool (OpenRouter/OpenAI-compatible native tool-calling in `sendMessage()` — no agent framework). The tool's implementation is `searchNoteChunks()` (`embeddings-actions.ts`): embeds the model's query and calls `match_documents`, always scoped to the signed-in user via `p_user_id` — the model only ever supplies the query text, never a user id. `sendMessage()` runs a bounded loop (`MAX_TOOL_ROUNDS = 3`): if the model calls the tool, results (with note titles and similarity) are appended and the model is called again, so it can rewrite and re-search when results look weak rather than answer from a poor match; the last round omits the tool entirely, forcing a plain answer so the loop always terminates. A general-knowledge question the model judges unrelated to notes (e.g. "what is Paris the capital of?") gets answered directly, no search at all. Only the final assistant answer is persisted to `chat_messages` — intermediate tool-call/tool-result messages exist only for that turn's in-memory round-trips, so the stored history and full-history replay above (the "memory" mechanism) are unaffected
 - No threads, no streaming, no message editing/deletion — see `docs/superpowers/specs/2026-07-21-sprint-3.6-chat-design.md` for the full list of deliberate non-goals
 - A signed-in-only header (workspace link, user email, sign-out) sits above the message list, same as journal
 
@@ -161,6 +162,12 @@ Server-side session checks use **`supabase.auth.getUser()`** — not `getSession
 - `OPENROUTER_API_KEY` lives in `.env.local` and must never be exposed to the browser (no `NEXT_PUBLIC_` prefix, no passing it to client components).
 - The connection itself lives in `app/lib/ai.ts` (`createChatCompletion()`, defaults to `openai/gpt-4o-mini`), read only from `app/lib/chat-actions.ts`'s `'use server'`-gated `sendMessage()` — the sole caller anywhere in the codebase. Any new feature that calls OpenRouter should follow the same shape: the call lives in a file-level `'use server'` module, never in a plain module imported by a Client Component (Next.js rejects inline `'use server'` functions in that shape — see the Sprint 3.6 - Chat data-access entry above).
 
+## Embeddings
+
+- Use `openai/text-embedding-3-small` via OpenRouter's embeddings endpoint, using the existing `OPENROUTER_API_KEY`. All embedding calls happen server-side only.
+- The `documents` table `embedding` column is `vector(1536)` — do not change this dimension.
+- Never change the embedding model after initial setup without dropping and re-embedding all documents. Changing the model breaks retrieval silently.
+
 ## Conventions
 - New pages go inside `app/`
 - Shared UI components go in `app/components/`
@@ -234,6 +241,8 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Persistent single conversation per user, loaded on mount | `getMessages()` in `chat.ts`; `chat_messages` table, see Chat app schema above |
 | Optimistic send with idempotent merge on the real response | `handleSend()` in `ChatView.tsx` — appends a temp message immediately, then reconciles by `id` via a `Map`-keyed merge (guards against a client-side duplicate-render race found during testing) |
 | e2e smoke test proving memory works end to end | `e2e/chat.spec.ts` — signs in, sends a fact, asks a follow-up, asserts the reply reflects it; makes real OpenRouter calls, not run in CI |
+| Model-driven note search via a tool call, with citation | `search_notes` tool defined in `chat-actions.ts` (native OpenRouter tool-calling, bounded `MAX_TOOL_ROUNDS` loop); implemented by `searchNoteChunks()` in `embeddings-actions.ts` (embeds the model's query, calls `match_documents` scoped by `p_user_id`) — the model decides whether to call it, and can rewrite the query and search again if results look weak |
+| e2e test proving note citation, honest "not found", and tool-skip for general questions | `e2e/chat-notes-rag.spec.ts` — seeds a note with a secret fact, asks about it and asserts the reply cites the note; asks an unrelated note-shaped question and asserts an honest non-match reply; asks a general-knowledge question and asserts it's still answered directly |
 
 ### Authentication (`/workspace`)
 

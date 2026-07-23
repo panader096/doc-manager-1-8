@@ -13,6 +13,7 @@ import {
   Collection,
   NoteTag,
 } from '../lib/db'
+import { reembedNoteAction } from '../lib/embeddings-actions'
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
@@ -81,6 +82,10 @@ export default function NoteEditor({ noteId }: { noteId: string }) {
         setStatus('saved')
         window.dispatchEvent(new Event('notes-updated'))
         setTimeout(() => setStatus(s => (s === 'saved' ? 'idle' : s)), 2000)
+        // Re-embedding runs after the note itself is safely saved, and its
+        // success/failure is independent of save status -- a slow or failed
+        // OpenRouter call must never block typing or show "Failed to save".
+        reembedNoteAction(Number(noteId)).catch(err => console.error('Failed to re-embed note', err))
       } catch {
         setStatus('error')
       }
