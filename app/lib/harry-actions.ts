@@ -105,6 +105,13 @@ export async function createChat(title: string, file: File): Promise<ReviewerCha
     if (readyError) throw readyError
     return readyChat
   } catch (err) {
+    // Always log the real error server-side, even though only a generic
+    // reason is ever shown to the user for non-IngestRejectedError
+    // failures -- without this, an unexpected ingestion failure (e.g. a
+    // library/bundler integration issue) is otherwise invisible.
+    if (!(err instanceof IngestRejectedError)) {
+      console.error('Unexpected error ingesting document for chat', chat.id, err)
+    }
     const reason = err instanceof IngestRejectedError ? err.message : 'Failed to process this PDF.'
     const { data: failedChat, error: failError } = await supabase
       .from('reviewer_chats')
