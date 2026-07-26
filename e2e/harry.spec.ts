@@ -1,5 +1,4 @@
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { test, expect } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 
@@ -8,7 +7,10 @@ import { createClient } from '@supabase/supabase-js'
 const TEST_EMAIL = process.env.E2E_TEST_EMAIL!
 const TEST_PASSWORD = process.env.E2E_TEST_PASSWORD!
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+// __dirname (CommonJS global, not import.meta.url) -- this repo has no
+// "type": "module" in package.json and playwright.config.ts itself relies
+// on plain __dirname, so Playwright's TS transform runs these files as
+// CommonJS, where import.meta is unavailable.
 const FIXTURE_PDF = path.join(__dirname, 'fixtures', 'test-document.pdf')
 
 async function signIn(page: import('@playwright/test').Page) {
