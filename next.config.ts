@@ -27,6 +27,18 @@ const csp = [
 ].join('; ');
 
 const nextConfig: NextConfig = {
+  // Next.js's Server Actions default to a 1MB request body limit, which sits
+  // well below Harry's own INGEST_MAX_BYTES (20MB) check in
+  // app/lib/harry-actions.ts -- createChat(title, file) passes the uploaded
+  // PDF straight through the Server Action boundary, so any file over 1MB
+  // was rejected by the framework (a generic 413) before our own, clearer
+  // size-limit error ever got a chance to run. Set above our own cap so our
+  // explicit check is what actually enforces the limit.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '25mb',
+    },
+  },
   async headers() {
     return [
       {
