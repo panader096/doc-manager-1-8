@@ -1,0 +1,6 @@
+# PDF fixtures are hand-built with byte-exact xref offsets computed
+# against LF-only line endings. Without this, Git's autocrlf handling
+# (core.autocrlf=true is common on Windows) treats these ASCII-only
+# PDFs as text and rewrites LF -> CRLF on checkout, corrupting the
+# offsets and breaking pdfjs-dist parsing. Force binary handling.
+*.pdf binary
