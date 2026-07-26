@@ -60,6 +60,8 @@ export async function createChat(title: string, file: File): Promise<ReviewerCha
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not signed in')
 
+  const buffer = await file.arrayBuffer()
+
   const { data: chat, error: insertError } = await supabase
     .from('reviewer_chats')
     .insert({ title: trimmedTitle, doc_filename: file.name, doc_status: 'processing' })
@@ -68,7 +70,6 @@ export async function createChat(title: string, file: File): Promise<ReviewerCha
   if (insertError) throw insertError
 
   const docPath = `${user.id}/${chat.id}/document.pdf`
-  const buffer = await file.arrayBuffer()
 
   const { error: uploadError } = await supabase.storage
     .from('reviewer-docs')
@@ -78,7 +79,15 @@ export async function createChat(title: string, file: File): Promise<ReviewerCha
     throw uploadError
   }
 
-  await supabase.from('reviewer_chats').update({ doc_path: docPath }).eq('id', chat.id)
+  const { error: pathUpdateError } = await supabase
+    .from('reviewer_chats')
+    .update({ doc_path: docPath })
+    .eq('id', chat.id)
+  if (pathUpdateError) {
+    await supabase.storage.from('reviewer-docs').remove([docPath])
+    await supabase.from('reviewer_chats').delete().eq('id', chat.id)
+    throw pathUpdateError
+  }
 
   try {
     const { chunks } = await ingestDocument(buffer)
