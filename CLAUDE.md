@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-This repo now contains five apps sharing one Supabase project:
+This repo now contains six apps sharing one Supabase project:
 
 - **Doc manager** (`/docs`) — the original personal document management app. Documents have a unique URL (e.g. `/docs/abc123`); data was originally localStorage-only and is being migrated to Supabase. Still fully public, no login required.
 - **Notes app** (`/notes`) — a Supabase-native notes app with collections, tags, search, pinning, archiving, and collection sharing via link. **Requires signing in** — every note, collection, tag, and search-history row belongs to exactly one user (`user_id`, enforced by RLS), so each signed-in user only ever sees their own data. The one deliberate exception: `/shared/[token]` stays anonymously readable, since that's the point of a share link.
 - **Personal Journal** (`/journal`) — a Supabase-native daily journal: one entry per calendar day per user, editable, full-text searchable, one optional image per entry. **Requires signing in**, same user-scoped RLS pattern as notes, with zero anon surface anywhere (no sharing feature exists for this app).
 - **Sprint 3.6 - Chat** (`/chat`) — a single, persistent AI chat conversation per signed-in user, backed by OpenRouter. **Requires signing in**, same user-scoped RLS pattern as notes/journal, zero anon surface. See "AI model calls" below for the server-only constraint on this app's model calls.
-- **Workspace** (`/workspace`) — a minimal placeholder area proving out Supabase Auth (email/password, Google, and GitHub). Requires signing in, same as `/notes`, `/journal`, and `/chat`.
+- **Sprint 3.8 - Intelligent Doc Reviewer** (`/harry`) — the AI-centric app for this sprint. The user uploads a PDF and asks an AI reviewer ("Harry") expert questions about it; every answer is grounded strictly in that document, with a page citation and a self-rated confidence per claim, after a hidden self-validation pass. **The AI is not a feature bolted onto this app — it *is* the app**: strip out the model calls and there's nothing left but a file upload with no way to ever read or query what's in it. Multiple independent, named chats per user, each scoped to one uploaded document. **Requires signing in**, same user-scoped RLS pattern as notes/journal/chat, zero anon surface. See "AI model calls" and "Embeddings" below.
+- **Workspace** (`/workspace`) — a minimal placeholder area proving out Supabase Auth (email/password, Google, and GitHub). Requires signing in, same as `/notes`, `/journal`, `/chat`, and `/harry`.
 
 ## User experience
 
@@ -40,6 +41,13 @@ Each document has its own URL (`/docs/abc123`) so bookmarking or sharing a link 
 - No threads, no streaming, no message editing/deletion — see `docs/superpowers/specs/2026-07-21-sprint-3.6-chat-design.md` for the full list of deliberate non-goals
 - A signed-in-only header (workspace link, user email, sign-out) sits above the message list, same as journal
 
+**Sprint 3.8 - Intelligent Doc Reviewer** is a two-pane workspace, unlike `/chat` (which has no sidebar since there's only ever one conversation):
+- **Left sidebar** (`HarrySidebar.tsx`) — lists the user's chats with Harry (name, uploaded PDF filename, a processing/failed status badge while ingestion runs), a "+ New chat" control that opens an inline name + PDF-upload form, rename (pencil icon → inline edit) and delete (× icon → confirmation modal, same pattern as `JournalSidebar.tsx`)
+- **Right content area** (`HarryChatView.tsx`) — message history styled like `ChatView.tsx` (user right-aligned, Harry left-aligned), except Harry's replies render each claim with an inline badge showing its page number and confidence (`[p. N; confidence: High|Medium|Low]` markers parsed out of the stored text by `parseHarryClaims()` in `harry.ts`); input is disabled until the chat's document finishes processing
+- **Ingestion**: uploading a PDF triggers `createChat()` (`harry-actions.ts`), which parses it with `pdfjs-dist` page-by-page, chunks and embeds each page's text, and only then flips the chat to usable — a PDF over 100 pages/20MB, or one with no extractable text (scanned/image-only), is rejected with a reason shown in the sidebar rather than silently failing
+- **Answering**: unlike `/chat`'s `search_notes` tool (which the model can choose to skip), retrieval here is mandatory and automatic on every message — Harry is never given the option to answer without the document's own text in front of it. Each turn also runs a hidden second model call that re-checks the first draft against the same retrieved pages before anything is shown to the user or persisted; see "AI model calls" below
+- A signed-in-only header (workspace link, user email, sign-out) sits above the two panes, same as journal/chat
+
 ## Stack
 - Next.js with the App Router
 - TypeScript
@@ -61,6 +69,8 @@ Playwright tests live in `e2e/`, run with `npm run test:e2e` (`playwright.config
 - `/journal` — journal home (empty state / select-or-start-today prompt)
 - `/journal/[id]` — individual journal entry, where `id` is the entry's numeric `journal_entries.id`
 - `/chat` — the single AI chat conversation for the signed-in user (Sprint 3.6 - Chat)
+- `/harry` — Harry home (empty state / select-or-start-a-chat prompt)
+- `/harry/[id]` — an individual chat with Harry, where `id` is the chat's numeric `reviewer_chats.id`
 - `/login` — sign in with email/password or Google
 - `/signup` — create an account with email/password
 - `/forgot-password` — request a password-reset email
@@ -88,6 +98,7 @@ Each app has exactly one data-access module. **No component or page may import a
 - **Notes app**: `app/lib/db.ts`. The `Note`, `NoteListItem`, `NoteTag`, `Collection`, and `Tag` interfaces there are the canonical shapes; extend them first before touching any other file.
 - **Personal Journal**: `app/lib/journal.ts`. The `JournalEntry` interface there is the canonical shape; extend it first before touching any other file.
 - **Sprint 3.6 - Chat**: `app/lib/chat.ts` **and** `app/lib/chat-actions.ts` — a deliberate two-file exception to "exactly one module," forced by Next.js: it disallows an inline `'use server'` Server Action inside a plain file that's imported by a Client Component (confirmed by an actual `next build` failure during implementation). `chat.ts` holds the canonical `ChatMessage` interface and `getMessages()` (a client-safe read, same pattern as `journal.ts`); `chat-actions.ts` is a file-level `'use server'` module holding only `sendMessage()` (inserts the user message, replays full history to OpenRouter via `app/lib/ai.ts`, inserts the reply) — same file-level-`'use server'` convention as `auth.ts`. Extend `chat.ts` for new reads, `chat-actions.ts` for new server-only mutations.
+- **Sprint 3.8 - Intelligent Doc Reviewer**: three files, extending the chat app's two-file split with a third for the ingestion pipeline specifically (kept separate from `harry-actions.ts` since it's substantial enough to warrant its own module, and has no Server Action exports of its own — it's a plain server-only module imported only by `harry-actions.ts`). `app/lib/harry.ts` holds the canonical `ReviewerChat`/`ReviewerMessage`/`HarryClaim` interfaces, client-safe reads (`getChats()`, `getChat()`, `getMessages()`), and `parseHarryClaims()` (parses the `[p. N; confidence: X]` markers out of a stored reply for the UI to render as badges). `app/lib/harry-ingest.ts` is the PDF parse/chunk/embed pipeline (`ingestDocument()`, `pdfjs-dist`-based). `app/lib/harry-actions.ts` is the file-level `'use server'` module: `createChat()`, `sendMessage()`, `renameChat()`, `deleteChat()`. Extend `harry.ts` for new reads, `harry-actions.ts` for new server-only mutations, `harry-ingest.ts` only if the ingestion pipeline itself changes.
 
 For any app: add a new named function to the relevant module for every new data operation. Schema changes (new tables, columns, indexes, RLS policies) go in `supabase/migrations/` as numbered SQL files.
 
@@ -127,6 +138,22 @@ Same user-scoping pattern as notes/journal: `user_id uuid not null default auth.
 
 No Storage bucket — chat has no images.
 
+### Harry (doc reviewer) app schema
+
+Three tables, migration `0021_reviewer_schema.sql`:
+
+- `reviewer_chats` (`id`, `user_id`, `title`, `doc_filename`, `doc_path`, `doc_status` — `check (doc_status in ('processing', 'ready', 'failed'))`, `doc_status_reason` nullable, `created_at`) — one row per chat, one PDF per chat, fixed at creation
+- `reviewer_messages` (`id`, `user_id`, `chat_id` → `reviewer_chats.id` `on delete cascade`, `role` — `check (role in ('user', 'assistant'))`, `content`, `created_at`) — full history is replayed to the model on every turn, same "memory" mechanism as `chat_messages`, just scoped by `chat_id` instead of being the only conversation
+- `reviewer_doc_chunks` (`id`, `user_id`, `chat_id` → `reviewer_chats.id` `on delete cascade`, `page int not null`, `content`, `embedding extensions.vector(1536)`) — the RAG store for this app; see "Embeddings" below
+
+Same user-scoping pattern as every other table in this project: `user_id uuid not null default auth.uid() references auth.users(id)`, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy per table covering select/insert/update/delete. **Zero anon access anywhere** — no sharing feature for this app either.
+
+Retrieval goes through its own RPC, `match_reviewer_chunks(query_embedding, match_threshold, match_count, p_user_id, p_chat_id)` — deliberately a separate function from the notes app's `match_documents`, scoped by both user and chat so one chat's chunks never leak into another chat's answers even for the same user. `security invoker` with `set search_path = public, extensions` set explicitly (migration `0020` initially shipped without this and failed on push — see that migration's history; `0021` includes the fix from the start).
+
+### Harry documents (Supabase Storage)
+
+One PDF per chat, private `reviewer-docs` bucket (`file_size_limit` 20MB, `allowed_mime_types` restricted to `application/pdf`), path `{user_id}/{chat_id}/document.pdf`. Same single `for all to authenticated` owner-folder policy as `note-images`/`journal-images` — no anon read policy, no sharing feature. `deleteChat()` in `harry-actions.ts` removes the Storage object before deleting the `reviewer_chats` row (not after) — a failed Storage removal blocks the row delete, so a chat can never be deleted while leaving its PDF orphaned with no row left to derive its path from.
+
 ### Profile photos (Supabase Storage)
 
 One optional profile photo per signed-in user, shown on `/workspace`. Private `profile-photos` bucket, path `{user_id}/photo.{ext}`. Unlike notes/journal images, there is **no database table** for this — the photo's existence and path are looked up via `storage.objects.list()` in `app/lib/profile.ts` (there is at most one object per user's folder), since nothing else about a "profile" needs tracking yet. `storage.objects` RLS is the same single `for all to authenticated` policy pattern scoped to `(storage.foldername(name))[1] = auth.uid()::text` — no anon access.
@@ -148,25 +175,26 @@ The server client must be created inside each function that needs it — never a
 **Rule for agent:** Every signed-in-only page must verify the user's session with the Supabase Auth server before it loads, and redirect to the sign-in page if the user is not signed in.
 
 - Use Supabase Auth for all sign-in and session handling — never build custom auth or store passwords yourself
-- Every page under `/workspace`, `/notes`, `/journal`, **and `/chat`** requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in. The proxy (`app/lib/supabase/middleware.ts`) enforces this as a first line of defense for all four path prefixes — every new signed-in-only app added to this repo must be added to its `isProtectedPath` check, not just given its own layout-level check
+- Every page under `/workspace`, `/notes`, `/journal`, `/chat`, **and `/harry`** requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in. The proxy (`app/lib/supabase/middleware.ts`) enforces this as a first line of defense for all five path prefixes — every new signed-in-only app added to this repo must be added to its `isProtectedPath` check, not just given its own layout-level check
 - After a successful sign-in, redirect to `/workspace`
 - After sign-out, redirect to `/login`. Do not rely on the browser-side session alone.
-- A sign-out control must be reachable from within `/notes`, `/journal`, and `/chat`, not just `/workspace` (`NotesSidebar.tsx`'s footer; `journal/layout.tsx`'s header; `chat/layout.tsx`'s header)
+- A sign-out control must be reachable from within `/notes`, `/journal`, `/chat`, and `/harry`, not just `/workspace` (`NotesSidebar.tsx`'s footer; `journal/layout.tsx`'s header; `chat/layout.tsx`'s header; `harry/layout.tsx`'s header)
 - Never put the service-role/secret key in any `NEXT_PUBLIC_`-prefixed env var, or anywhere client-accessible — only the two keys listed under Credentials belong in this app at all
 
 Server-side session checks use **`supabase.auth.getUser()`** — not `getSession()` (never trust it server-side; it can be spoofed when cookie storage is shared with the client) and, in this project, not `getClaims()` either, even though it's Supabase's newer/faster recommendation — this project's rubric specifically calls for `getUser()`, so that's the standard here. If a diff introduces `getSession()` in server code (a Server Component, Route Handler, Server Action, or the proxy), flag it before merging. All auth calls (sign up, sign in, sign in with Google, sign out) go through `app/lib/auth.ts` — the same single-source-of-truth convention as `documents.ts`/`db.ts`, just for auth instead of data.
 
 ## AI model calls
 
-- All model calls must happen server-side only. Never call the OpenRouter API from browser code.
-- `OPENROUTER_API_KEY` lives in `.env.local` and must never be exposed to the browser (no `NEXT_PUBLIC_` prefix, no passing it to client components).
-- The connection itself lives in `app/lib/ai.ts` (`createChatCompletion()`, defaults to `openai/gpt-4o-mini`), read only from `app/lib/chat-actions.ts`'s `'use server'`-gated `sendMessage()` — the sole caller anywhere in the codebase. Any new feature that calls OpenRouter should follow the same shape: the call lives in a file-level `'use server'` module, never in a plain module imported by a Client Component (Next.js rejects inline `'use server'` functions in that shape — see the Sprint 3.6 - Chat data-access entry above).
+- All LLM and embedding calls must happen server-side only. Never call OpenRouter from browser code.
+- `OPENROUTER_API_KEY` lives in `.env.local` and must never have a `NEXT_PUBLIC_` prefix or be passed to client components.
+- Model: `anthropic/claude-haiku-4.5` — `DEFAULT_MODEL` in `app/lib/ai.ts`, used by both apps that call `createChatCompletion()` (below). Chosen after starting on `openai/gpt-4o-mini`; if this changes again, update this line.
+- The connection itself lives in `app/lib/ai.ts` (`createChatCompletion()`, `createEmbeddings()`). Callers today, all file-level `'use server'` modules: `app/lib/chat-actions.ts`'s `sendMessage()` (Sprint 3.6 - Chat, full-history replay, model decides whether to call an optional `search_notes` tool); `app/lib/harry-actions.ts`'s `sendMessage()` (Sprint 3.8 - Harry, calls `createChatCompletion()` twice per turn — mandatory automatic retrieval feeds the first draft call, then a second hidden call validates that draft against the same retrieved pages before anything is shown to the user or persisted — see the Harry user-experience entry above); and `app/lib/harry-ingest.ts`'s `ingestDocument()` (called from `harry-actions.ts`'s `createChat()`, calls `createEmbeddings()` only, no chat completion). Any new feature that calls OpenRouter should follow the same shape: the call lives in a file-level `'use server'` module, never in a plain module imported by a Client Component (Next.js rejects inline `'use server'` functions in that shape — see the Sprint 3.6 - Chat data-access entry above).
 
 ## Embeddings
 
-- Use `openai/text-embedding-3-small` via OpenRouter's embeddings endpoint, using the existing `OPENROUTER_API_KEY`. All embedding calls happen server-side only.
-- The `documents` table `embedding` column is `vector(1536)` — do not change this dimension.
-- Never change the embedding model after initial setup without dropping and re-embedding all documents. Changing the model breaks retrieval silently.
+- Embedding model: `openai/text-embedding-3-small` via OpenRouter's embeddings endpoint (`createEmbeddings()` in `app/lib/ai.ts`), using the existing `OPENROUTER_API_KEY`. All embedding calls happen server-side only.
+- Two vector-store tables share this model and dimension: the notes app's `documents` table (`note_id`-scoped, migration `0020`) and Harry's `reviewer_doc_chunks` table (`chat_id`-scoped, `page`-tagged, migration `0021`). Both `embedding` columns are `vector(1536)` — do not change this dimension on either table.
+- Never change the embedding model after initial setup without dropping and re-embedding every row in both tables. Changing the model breaks retrieval silently, and changing it for only one table would leave the two vector stores using incompatible embedding spaces.
 
 ## Conventions
 - New pages go inside `app/`
@@ -244,6 +272,19 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Model-driven note search via a tool call, with citation | `search_notes` tool defined in `chat-actions.ts` (native OpenRouter tool-calling, bounded `MAX_TOOL_ROUNDS` loop); implemented by `searchNoteChunks()` in `embeddings-actions.ts` (embeds the model's query, calls `match_documents` scoped by `p_user_id`) — the model decides whether to call it, and can rewrite the query and search again if results look weak |
 | e2e test proving note citation, honest "not found", and tool-skip for general questions | `e2e/chat-notes-rag.spec.ts` — seeds a note with a secret fact, asks about it and asserts the reply cites the note; asks an unrelated note-shaped question and asserts an honest non-match reply; asks a general-knowledge question and asserts it's still answered directly |
 
+### Sprint 3.8 - Intelligent Doc Reviewer app (`/harry`)
+
+| Feature | Location |
+|---|---|
+| Multiple named chats per user, each scoped to one uploaded PDF | `HarrySidebar.tsx`; `createChat()` / `renameChat()` / `deleteChat()` in `harry-actions.ts`; `reviewer_chats` table, see schema above |
+| PDF upload → parse → chunk → embed pipeline, with page/size caps and scanned-PDF rejection | `createChat()` in `harry-actions.ts`; `ingestDocument()` in `harry-ingest.ts` (`pdfjs-dist`, 100-page/20MB caps, rejects PDFs with no extractable text) |
+| Mandatory, automatic retrieval-grounded answers (no model-chosen skip, unlike `/chat`'s `search_notes`) | `sendMessage()` in `harry-actions.ts`; `match_reviewer_chunks` RPC, scoped by both `p_user_id` and `p_chat_id` |
+| Per-claim page citation and self-rated confidence, rendered as inline badges | `[p. N; confidence: High\|Medium\|Low]` markers in the system prompt (`harry-actions.ts`); parsed by `parseHarryClaims()` in `harry.ts`; rendered by `AssistantContent` in `HarryChatView.tsx` |
+| Hidden self-validation pass — a second model call checks the draft against the retrieved pages before anything is shown or persisted | `sendMessage()` in `harry-actions.ts`; only the validated answer is ever inserted into `reviewer_messages` |
+| Full per-chat conversational memory | `sendMessage()` replays `reviewer_messages` filtered by `chat_id` on every turn, same full-history-replay mechanism as `/chat` |
+| Rename / delete a chat, with Storage + cascade cleanup | `renameChat()` / `deleteChat()` in `harry-actions.ts`; delete removes the Storage object before the row, `on delete cascade` handles `reviewer_messages`/`reviewer_doc_chunks` |
+| e2e coverage: grounded citation, honest refusal for out-of-scope questions, chat management | `e2e/harry.spec.ts` — uploads a real test PDF, asserts a page-cited answer, asserts an honest "not addressed" reply for an uncovered question, renames and deletes a chat; makes real OpenRouter calls, not run in CI |
+
 ### Authentication (`/workspace`)
 
 | Feature | Location |
@@ -252,5 +293,5 @@ Do not re-implement these. Check the relevant component before adding anything a
 | Google / GitHub sign-in (OAuth/PKCE) | `signInWithGoogleAction()` / `signInWithGitHubAction()` in `auth.ts`; both share the same provider-agnostic `app/auth/callback/route.ts` |
 | Password reset via email | `requestPasswordResetAction()` / `updatePasswordAction()` in `auth.ts`; `app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/auth/confirm/route.ts` (`verifyOtp()` with `token_hash`+`type` — the current documented pattern for email-link verification, distinct from the OAuth `code` exchange `/auth/callback` uses) |
 | Session refresh on every request | `app/lib/supabase/middleware.ts`, wired up in root `proxy.ts` |
-| Server-side route protection for `/workspace`, `/notes`, `/journal`, and `/chat` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` / `app/journal/layout.tsx` / `app/chat/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks all four path prefixes too, as a first line of defense |
+| Server-side route protection for `/workspace`, `/notes`, `/journal`, `/chat`, and `/harry` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` / `app/journal/layout.tsx` / `app/chat/layout.tsx` / `app/harry/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks all five path prefixes too, as a first line of defense |
 | Profile photo (one per user, shown on `/workspace`) | `uploadProfilePhoto()` / `removeProfilePhoto()` / `getProfilePhotoUrl()` in `app/lib/profile.ts`; `ProfilePhoto.tsx`; private `profile-photos` bucket, see Profile photos above |
