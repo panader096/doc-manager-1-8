@@ -171,9 +171,19 @@ export async function sendMessage(
   const draft = await createChatCompletion(conversation)
   const draftContent = draft.content ?? "I wasn't able to come up with an answer — could you rephrase your question?"
 
+  // Include the same conversation history the draft call saw (minus its own
+  // last entry, the current question, which is already conveyed below via
+  // the explicit "Question: ..." message -- including it twice would just
+  // duplicate it). Without this, the validation pass -- which produces the
+  // answer actually shown and persisted, not the draft -- has no way to
+  // judge a claim that leans on earlier turns (e.g. "repeat what you just
+  // told me"), and Harry visibly "forgets" the conversation in its final
+  // reply even though the draft itself was generated with full history.
+  const priorHistory = (history as ReviewerMessage[]).slice(0, -1)
   const validationConversation: AiChatMessage[] = [
     { role: 'system', content: HARRY_VALIDATION_PROMPT },
-    { role: 'system', content: `Document excerpts used:\n\n${contextBlock}` },
+    ...priorHistory.map(m => ({ role: m.role, content: m.content }) as AiChatMessage),
+    { role: 'system', content: `Document excerpts used for this question:\n\n${contextBlock}` },
     { role: 'user', content: `Question: ${trimmedContent}\n\nDraft answer to verify:\n${draftContent}` },
   ]
   const validated = await createChatCompletion(validationConversation)

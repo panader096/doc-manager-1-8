@@ -17,6 +17,8 @@ export default function HarrySidebar() {
   const [newTitle, setNewTitle] = useState('')
   const [newFile, setNewFile] = useState<File | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const pathname = usePathname()
@@ -27,6 +29,9 @@ export default function HarrySidebar() {
     try {
       const data = await getChats()
       setChats(data)
+      setListError(null)
+    } catch {
+      setListError("Couldn't load your chats — try refreshing")
     } finally {
       setLoading(false)
     }
@@ -54,8 +59,13 @@ export default function HarrySidebar() {
       setNewTitle('')
       setNewFile(null)
       router.push(`/harry/${chat.id}`)
-    } catch {
-      setCreateError("Couldn't create the chat — try again")
+    } catch (err) {
+      // Show the server action's actual message (e.g. "PDF must be 20MB or
+      // smaller") rather than a generic one -- Server Action error messages
+      // do reach the client in this app's dev/deployment setup, and a
+      // specific reason is the difference between a user retrying uselessly
+      // and a user understanding what to do differently.
+      setCreateError(err instanceof Error ? err.message : "Couldn't create the chat — try again")
     } finally {
       setCreating(false)
     }
@@ -71,11 +81,16 @@ export default function HarrySidebar() {
     const id = confirmingDeleteId
     if (id == null) return
     setConfirmingDeleteId(null)
-    await deleteChat(id)
-    const next = chats.filter(c => c.id !== id)
-    setChats(next)
-    if (activeId === String(id)) {
-      router.push('/harry')
+    setActionError(null)
+    try {
+      await deleteChat(id)
+      const next = chats.filter(c => c.id !== id)
+      setChats(next)
+      if (activeId === String(id)) {
+        router.push('/harry')
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Couldn't delete that chat — try again")
     }
   }
 
@@ -92,8 +107,13 @@ export default function HarrySidebar() {
     const title = renameValue.trim()
     setRenamingId(null)
     if (!title) return
-    await renameChat(id, title)
-    setChats(prev => prev.map(c => (c.id === id ? { ...c, title } : c)))
+    setActionError(null)
+    try {
+      await renameChat(id, title)
+      setChats(prev => prev.map(c => (c.id === id ? { ...c, title } : c)))
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Couldn't rename that chat — try again")
+    }
   }
 
   return (
@@ -153,6 +173,10 @@ export default function HarrySidebar() {
           </button>
         </div>
 
+        {actionError && (
+          <p className="text-[11px] mb-1" style={{ color: '#ef4444' }}>{actionError}</p>
+        )}
+
         {showNewChatForm && (
           <div className="flex flex-col gap-1.5 mt-1">
             <input
@@ -202,6 +226,10 @@ export default function HarrySidebar() {
               </div>
             ))}
           </div>
+        ) : listError ? (
+          <p className="px-3 py-2 text-[12px]" style={{ color: '#ef4444' }}>
+            {listError}
+          </p>
         ) : chats.length === 0 ? (
           <p className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-3)' }}>
             No chats yet
