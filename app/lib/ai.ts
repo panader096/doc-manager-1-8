@@ -84,6 +84,43 @@ export async function createChatCompletion(
   }
 }
 
+// Same request shape as createChatCompletion, but with stream: true and
+// stream_options.include_usage so the final SSE chunk carries token usage --
+// otherwise usage is only available on non-streamed responses.
+export async function createChatCompletionStream(
+  messages: ChatMessage[],
+  options: { model?: string } = {},
+): Promise<ReadableStream<Uint8Array>> {
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY is not set')
+  }
+
+  const { model = DEFAULT_MODEL } = options
+
+  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      max_tokens: DEFAULT_MAX_TOKENS,
+      stream: true,
+      stream_options: { include_usage: true },
+    }),
+  })
+
+  if (!response.ok || !response.body) {
+    const errorText = response.body ? await response.text() : 'no response body'
+    throw new Error(`OpenRouter stream request failed (${response.status}): ${errorText}`)
+  }
+
+  return response.body
+}
+
 export async function createEmbeddings(inputs: string[]): Promise<number[][]> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {

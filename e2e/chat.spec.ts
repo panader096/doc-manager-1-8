@@ -17,11 +17,11 @@ test('sends a message and receives a reply that remembers context', async ({ pag
   await page.getByPlaceholder('Type a message…').fill('My favorite color is teal.')
   await page.getByRole('button', { name: 'Send' }).click()
   await expect(page.getByText('My favorite color is teal.')).toBeVisible()
-  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
 
   await page.getByPlaceholder('Type a message…').fill("What's my favorite color?")
   await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
 
   const lastMessage = page.locator('main div.whitespace-pre-wrap').last()
   await expect(lastMessage).toContainText(/teal/i)
@@ -46,11 +46,11 @@ test('multi-turn conversation: a follow-up reply reflects the earlier turn, not 
   await page.getByPlaceholder('Type a message…').fill(firstMessage)
   await page.getByRole('button', { name: 'Send' }).click()
   await expect(page.getByText(firstMessage)).toBeVisible()
-  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
 
   await page.getByPlaceholder('Type a message…').fill(followupMessage)
   await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
 
   const lastMessage = page.locator('main div.whitespace-pre-wrap').last()
   // A reply that actually remembers the earlier turn re-explains the same
@@ -76,12 +76,12 @@ test('persistence: messages survive a page refresh', async ({ page }) => {
   await page.getByPlaceholder('Type a message…').fill(firstMessage)
   await page.getByRole('button', { name: 'Send' }).click()
   await expect(page.getByText(firstMessage)).toBeVisible()
-  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
 
   await page.getByPlaceholder('Type a message…').fill(secondMessage)
   await page.getByRole('button', { name: 'Send' }).click()
   await expect(page.getByText(secondMessage)).toBeVisible()
-  await expect(page.getByText('Thinking…')).not.toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
 
   await page.reload()
 

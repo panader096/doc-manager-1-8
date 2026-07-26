@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { getMessages, type ChatMessage } from '../lib/chat'
-import { sendMessage } from '../lib/chat-actions'
 
 let nextTempId = -1
 
@@ -41,19 +40,52 @@ export default function ChatView() {
       model: null,
       total_tokens: null,
     }
-    setMessages(prev => [...prev, optimisticMessage])
+    const streamingId = nextTempId--
+    setMessages(prev => [
+      ...prev,
+      optimisticMessage,
+      { id: streamingId, role: 'assistant', content: '', created_at: new Date().toISOString(), model: null, total_tokens: null },
+    ])
 
     try {
-      const { userMessage, assistantMessage } = await sendMessage(content)
-      setMessages(prev => {
-        const byId = new Map(prev.map(m => [m.id, m]))
-        byId.delete(optimisticMessage.id)
-        byId.set(userMessage.id, userMessage)
-        byId.set(assistantMessage.id, assistantMessage)
-        return Array.from(byId.values()).sort((a, b) => a.created_at.localeCompare(b.created_at))
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
       })
+      if (!response.ok || !response.body) throw new Error('Stream request failed')
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let streamedText = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        const doneMarkerIndex = buffer.indexOf('\n\n__DONE__')
+        if (doneMarkerIndex !== -1) {
+          streamedText += buffer.slice(0, doneMarkerIndex)
+          const { userMessage, assistantMessage } = JSON.parse(buffer.slice(doneMarkerIndex + '\n\n__DONE__'.length))
+          setMessages(prev => {
+            const byId = new Map(prev.map(m => [m.id, m]))
+            byId.delete(optimisticMessage.id)
+            byId.delete(streamingId)
+            byId.set(userMessage.id, userMessage)
+            byId.set(assistantMessage.id, assistantMessage)
+            return Array.from(byId.values()).sort((a, b) => a.created_at.localeCompare(b.created_at))
+          })
+          break
+        }
+
+        streamedText += buffer
+        buffer = ''
+        setMessages(prev => prev.map(m => (m.id === streamingId ? { ...m, content: streamedText } : m)))
+      }
     } catch {
-      setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id))
+      setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id && m.id !== streamingId))
       setInput(content)
       setError("Couldn't send that — try again")
     } finally {
@@ -101,16 +133,6 @@ export default function ChatView() {
               </div>
             </div>
           ))
-        )}
-        {sending && (
-          <div className="flex" style={{ justifyContent: 'flex-start' }}>
-            <div
-              className="max-w-[70%] rounded-[10px] px-3 py-2 text-[13px]"
-              style={{ backgroundColor: 'var(--bg-modal)', color: 'var(--text-3)', boxShadow: 'var(--shadow-modal)' }}
-            >
-              Thinking…
-            </div>
-          </div>
         )}
       </div>
 

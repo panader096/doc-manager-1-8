@@ -1,52 +1,16 @@
 'use server'
 
 import { createClient } from './supabase/server'
-import { createChatCompletion, type ChatMessage as AiChatMessage, type ToolDefinition } from './ai'
+import { createChatCompletion, type ChatMessage as AiChatMessage } from './ai'
 import { searchNoteChunks } from './embeddings-actions'
+import { SYSTEM_PROMPT, SEARCH_NOTES_TOOL, MAX_TOOL_ROUNDS } from './chat-shared'
 import type { ChatMessage } from './chat'
 
 const MESSAGE_SELECT = 'id, role, content, created_at, model, total_tokens'
 
-const SYSTEM_PROMPT =
-  'You are a helpful assistant. The user also has a personal notes app; you have a search_notes tool that ' +
-  "searches it, always scoped to this user's own notes only. Decide for yourself whether a question needs " +
-  "it -- skip it entirely for general-knowledge questions that have nothing to do with the user's notes. When " +
-  'you do search and the results look weak, irrelevant, or empty, rewrite the query (different wording, more ' +
-  'specific or more general as appropriate) and search again rather than answering from a poor match. If, ' +
-  "after trying, nothing relevant turns up for a question that does seem to be about the user's notes, say so " +
-  'directly instead of guessing. When you do use a note in your answer, cite it by name (for example, "based ' +
-  'on your note about the London event...").'
-
-const SEARCH_NOTES_TOOL: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'search_notes',
-    description:
-      "Search the user's personal notes for chunks relevant to a query. Use this only when the answer " +
-      'plausibly requires something the user previously wrote in their own notes. Do not use it for general ' +
-      'knowledge questions unrelated to personal notes (for example, "what is Paris the capital of?").',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description:
-            'The search query, phrased to best match how this might be worded in the notes. Rephrase and ' +
-            "call again if an earlier search's results looked weak or irrelevant.",
-        },
-      },
-      required: ['query'],
-    },
-  },
-}
-
-// Model gets up to this many tool-enabled rounds before being forced to
-// answer with whatever it has -- bounds cost/latency if it kept rewriting.
-const MAX_TOOL_ROUNDS = 3
-
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>
 
-async function runSearchNotesTool(supabase: ServerSupabase, query: string): Promise<string> {
+export async function runSearchNotesTool(supabase: ServerSupabase, query: string): Promise<string> {
   const chunks = await searchNoteChunks(query)
   if (chunks.length === 0) return "No matching chunks were found in the user's notes for this query."
 
