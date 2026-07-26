@@ -38,6 +38,8 @@ export default function ChatView() {
       role: 'user',
       content,
       created_at: new Date().toISOString(),
+      model: null,
+      total_tokens: null,
     }
     setMessages(prev => [...prev, optimisticMessage])
 
@@ -91,6 +93,11 @@ export default function ChatView() {
                 }
               >
                 {message.content}
+                {message.role === 'assistant' && message.model && (
+                  <p className="text-[10px] mt-1 opacity-60">
+                    {message.model}{message.total_tokens != null ? ` · ${message.total_tokens} tokens` : ''}
+                  </p>
+                )}
               </div>
             </div>
           ))

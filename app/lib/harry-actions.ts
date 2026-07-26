@@ -7,7 +7,7 @@ import { ingestDocument, IngestRejectedError, INGEST_MAX_BYTES } from './harry-i
 import type { ReviewerChat, ReviewerMessage } from './harry'
 
 const CHAT_SELECT = 'id, title, doc_filename, doc_status, doc_status_reason, created_at'
-const MESSAGE_SELECT = 'id, chat_id, role, content, created_at'
+const MESSAGE_SELECT = 'id, chat_id, role, content, created_at, model, total_tokens'
 
 const MATCH_COUNT = 5
 // Same starting defaults as searchNoteChunks() in embeddings-actions.ts --
@@ -191,7 +191,13 @@ export async function sendMessage(
 
   const { data: assistantMessage, error: insertAssistantError } = await supabase
     .from('reviewer_messages')
-    .insert({ chat_id: chatId, role: 'assistant', content: replyContent })
+    .insert({
+      chat_id: chatId,
+      role: 'assistant',
+      content: replyContent,
+      model: validated.model,
+      total_tokens: validated.usage?.totalTokens ?? null,
+    })
     .select(MESSAGE_SELECT)
     .single()
   if (insertAssistantError) throw insertAssistantError

@@ -5,7 +5,7 @@ import { createChatCompletion, type ChatMessage as AiChatMessage, type ToolDefin
 import { searchNoteChunks } from './embeddings-actions'
 import type { ChatMessage } from './chat'
 
-const MESSAGE_SELECT = 'id, role, content, created_at'
+const MESSAGE_SELECT = 'id, role, content, created_at, model, total_tokens'
 
 const SYSTEM_PROMPT =
   'You are a helpful assistant. The user also has a personal notes app; you have a search_notes tool that ' +
@@ -96,6 +96,8 @@ export async function sendMessage(
   ]
 
   let finalContent: string | null = null
+  let finalModel: string | null = null
+  let finalTotalTokens: number | null = null
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const isLastRound = round === MAX_TOOL_ROUNDS - 1
     const assistantTurn = await createChatCompletion(
@@ -118,6 +120,8 @@ export async function sendMessage(
     }
 
     finalContent = assistantTurn.content
+    finalModel = assistantTurn.model
+    finalTotalTokens = assistantTurn.usage?.totalTokens ?? null
     break
   }
 
@@ -125,7 +129,7 @@ export async function sendMessage(
 
   const { data: assistantMessage, error: insertAssistantError } = await supabase
     .from('chat_messages')
-    .insert({ role: 'assistant', content: replyContent })
+    .insert({ role: 'assistant', content: replyContent, model: finalModel, total_tokens: finalTotalTokens })
     .select(MESSAGE_SELECT)
     .single()
   if (insertAssistantError) throw insertAssistantError

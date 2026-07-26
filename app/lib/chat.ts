@@ -5,9 +5,11 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   created_at: string
+  model: string | null
+  total_tokens: number | null
 }
 
-const MESSAGE_SELECT = 'id, role, content, created_at'
+const MESSAGE_SELECT = 'id, role, content, created_at, model, total_tokens'
 
 export async function getMessages(): Promise<ChatMessage[]> {
   const supabase = createClient()

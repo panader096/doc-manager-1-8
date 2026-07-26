@@ -16,6 +16,8 @@ export interface ReviewerMessage {
   role: 'user' | 'assistant'
   content: string
   created_at: string
+  model: string | null
+  total_tokens: number | null
 }
 
 export interface HarryClaim {
@@ -25,7 +27,7 @@ export interface HarryClaim {
 }
 
 const CHAT_SELECT = 'id, title, doc_filename, doc_status, doc_status_reason, created_at'
-const MESSAGE_SELECT = 'id, chat_id, role, content, created_at'
+const MESSAGE_SELECT = 'id, chat_id, role, content, created_at, model, total_tokens'
 
 export async function getChats(): Promise<ReviewerChat[]> {
   const supabase = createClient()

@@ -34,6 +34,8 @@ export type ChatMessage =
 export interface AssistantMessage {
   content: string | null
   tool_calls?: ToolCall[]
+  model: string
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number } | null
 }
 
 export async function createChatCompletion(
@@ -68,7 +70,18 @@ export async function createChatCompletion(
 
   const data = await response.json()
   const message = data.choices[0].message
-  return { content: message.content ?? null, tool_calls: message.tool_calls }
+  return {
+    content: message.content ?? null,
+    tool_calls: message.tool_calls,
+    model: data.model,
+    usage: data.usage
+      ? {
+          promptTokens: data.usage.prompt_tokens,
+          completionTokens: data.usage.completion_tokens,
+          totalTokens: data.usage.total_tokens,
+        }
+      : null,
+  }
 }
 
 export async function createEmbeddings(inputs: string[]): Promise<number[][]> {
