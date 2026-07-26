@@ -46,7 +46,10 @@ GlobalWorkerOptions.workerSrc = pathToFileURL(
 // ("Ensure that the `standardFontDataUrl` API parameter is provided.")
 // when a page uses a standard (non-embedded) font -- see Task 2's
 // scripts/pdf-parse-demo.mjs. pdfjs requires this to end with "/" (forward
-// slash specifically, even on Windows).
+// slash specifically, even on Windows). Unlike workerSrc above, this is
+// deliberately NOT wrapped in pathToFileURL: pdfjs reads this path via
+// fs.readFile internally, not import(), so a plain path is correct here --
+// don't "fix" this to match workerSrc, that would break font loading.
 function resolveStandardFontDataUrl(): string {
   return path.join(PDFJS_DIST_DIR, 'standard_fonts').replace(/\\/g, '/').replace(/\/?$/, '/')
 }
