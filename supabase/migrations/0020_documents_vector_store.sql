@@ -46,6 +46,7 @@ returns table (
   similarity float
 )
 language sql stable security invoker
+set search_path = public, extensions
 as $$
   select
     documents.id,
