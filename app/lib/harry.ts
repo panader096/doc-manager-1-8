@@ -65,6 +65,11 @@ export async function getMessages(chatId: number): Promise<ReviewerMessage[]> {
 // as a plain trailing claim with no page/confidence, rather than breaking.
 const CLAIM_MARKER = /\[p\.\s*(\d+);\s*confidence:\s*(High|Medium|Low)\]/gi
 
+function normalizeConfidence(raw: string): 'High' | 'Medium' | 'Low' {
+  const lower = raw.toLowerCase()
+  return (lower.charAt(0).toUpperCase() + lower.slice(1)) as 'High' | 'Medium' | 'Low'
+}
+
 export function parseHarryClaims(content: string): HarryClaim[] {
   const claims: HarryClaim[] = []
   let lastIndex = 0
@@ -73,7 +78,7 @@ export function parseHarryClaims(content: string): HarryClaim[] {
   while ((match = CLAIM_MARKER.exec(content)) !== null) {
     const text = content.slice(lastIndex, match.index).trim()
     if (text) {
-      claims.push({ text, page: Number(match[1]), confidence: match[2] as HarryClaim['confidence'] })
+      claims.push({ text, page: Number(match[1]), confidence: normalizeConfidence(match[2]) })
     }
     lastIndex = CLAIM_MARKER.lastIndex
   }
