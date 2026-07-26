@@ -197,8 +197,17 @@ export async function renameChat(chatId: number, title: string): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not signed in')
 
-  const { error } = await supabase.from('reviewer_chats').update({ title: trimmedTitle }).eq('id', chatId)
+  const { data, error } = await supabase
+    .from('reviewer_chats')
+    .update({ title: trimmedTitle })
+    .eq('id', chatId)
+    .select('id')
   if (error) throw error
+  // RLS's `using` clause makes an update against another user's chat match
+  // zero rows rather than error -- without this check that fails silently,
+  // unlike sendMessage/deleteChat which both verify ownership via a
+  // preceding select().single() that throws on a missing/unowned row.
+  if (data.length === 0) throw new Error('Chat not found')
 }
 
 export async function deleteChat(chatId: number): Promise<void> {
