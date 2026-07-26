@@ -19,6 +19,27 @@ async function signIn(page: import('@playwright/test').Page) {
   await page.waitForURL('/workspace')
 }
 
+async function signedInSupabase() {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+  )
+  const { error } = await supabase.auth.signInWithPassword({ email: TEST_EMAIL, password: TEST_PASSWORD })
+  if (error) throw error
+  return supabase
+}
+
+// Mirrors deleteChat() in app/lib/harry-actions.ts: remove the uploaded PDF
+// from Storage (if any), then delete the chat row -- reviewer_messages and
+// reviewer_doc_chunks cascade via the FK, so nothing else needs cleanup.
+async function deleteHarryChat(supabase: Awaited<ReturnType<typeof signedInSupabase>>, chatId: number) {
+  const { data: chat } = await supabase.from('reviewer_chats').select('doc_path').eq('id', chatId).single()
+  if (chat?.doc_path) {
+    await supabase.storage.from('reviewer-docs').remove([chat.doc_path])
+  }
+  await supabase.from('reviewer_chats').delete().eq('id', chatId)
+}
+
 async function createHarryChat(page: import('@playwright/test').Page, title: string) {
   await page.goto('/harry')
   await page.getByRole('button', { name: '+ New chat' }).click()
@@ -45,32 +66,38 @@ async function sendHarryMessage(page: import('@playwright/test').Page, message: 
 
 test('1. happy path: Harry answers from the document with a page citation', async ({ page }) => {
   const marker = Date.now()
+  const supabase = await signedInSupabase()
   await signIn(page)
-  await createHarryChat(page, `Smoke test ${marker}`)
+  const chatId = await createHarryChat(page, `Smoke test ${marker}`)
 
-  const reply = await sendHarryMessage(page, `What is the refund window? (ref ${marker})`)
-  await expect(reply).toContainText(/30 days/i)
-  // Confirmed real rendered badge text is "p. 1 · High" -- a single text node
-  // in a sibling <span> right after the claim text.
-  await expect(reply).toContainText(/p\.\s*1\s*·\s*High/i)
+  try {
+    const reply = await sendHarryMessage(page, `What is the refund window? (ref ${marker})`)
+    await expect(reply).toContainText(/30 days/i)
+    // Confirmed real rendered badge text is "p. 1 · High" -- a single text node
+    // in a sibling <span> right after the claim text.
+    await expect(reply).toContainText(/p\.\s*1\s*·\s*High/i)
+  } finally {
+    await deleteHarryChat(supabase, chatId)
+  }
 })
 
 test('2. grounding: Harry admits when the document does not cover a question', async ({ page }) => {
   const marker = Date.now()
+  const supabase = await signedInSupabase()
   await signIn(page)
-  await createHarryChat(page, `Smoke test ${marker}`)
+  const chatId = await createHarryChat(page, `Smoke test ${marker}`)
 
-  const reply = await sendHarryMessage(page, `What is the CEO's name? (ref ${marker})`)
-  await expect(reply).toContainText(/isn.?t addressed|not addressed|does not cover|doesn.?t cover|no mention/i)
+  try {
+    const reply = await sendHarryMessage(page, `What is the CEO's name? (ref ${marker})`)
+    await expect(reply).toContainText(/isn.?t addressed|not addressed|does not cover|doesn.?t cover|no mention/i)
+  } finally {
+    await deleteHarryChat(supabase, chatId)
+  }
 })
 
 test('3. management: rename and delete a chat', async ({ page }) => {
   const marker = Date.now()
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-  )
-  await supabase.auth.signInWithPassword({ email: TEST_EMAIL, password: TEST_PASSWORD })
+  const supabase = await signedInSupabase()
 
   await signIn(page)
   const chatId = await createHarryChat(page, `Rename me ${marker}`)
