@@ -44,7 +44,10 @@ export default function HarryChatView({ chatId }: { chatId: number }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setLoading(true)
+    // No need to reset loading to true here -- HarryChatView is keyed by
+    // chatId at its call site (app/harry/[id]/page.tsx), so a chat change
+    // always remounts fresh, and `loading` already starts true via its
+    // useState initializer above.
     Promise.all([getChat(chatId), getMessages(chatId)])
       .then(([chatData, messageData]) => {
         setChat(chatData)
