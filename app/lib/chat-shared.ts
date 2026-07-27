@@ -16,10 +16,12 @@ export const SYSTEM_PROMPT =
   "searches it, always scoped to this user's own notes only. Decide for yourself whether a question needs " +
   "it -- skip it entirely for general-knowledge questions that have nothing to do with the user's notes. When " +
   'you do search and the results look weak, irrelevant, or empty, rewrite the query (different wording, more ' +
-  'specific or more general as appropriate) and search again rather than answering from a poor match. If, ' +
-  "after trying, nothing relevant turns up for a question that does seem to be about the user's notes, say so " +
-  'directly instead of guessing. When you do use a note in your answer, cite it by name (for example, "based ' +
-  'on your note about the London event...").'
+  'specific or more general as appropriate) and search again rather than answering from a poor match. If a ' +
+  'question has multiple distinct parts (for example, asking about two different topics, or a comparison ' +
+  'between two things), search separately for each part rather than one combined query -- a single broad ' +
+  "search often misses one side of a compound question. If, after trying, nothing relevant turns up for a " +
+  "question that does seem to be about the user's notes, say so directly instead of guessing. When you do " +
+  'use a note in your answer, cite it by name (for example, "based on your note about the London event...").'
 
 export const SEARCH_NOTES_TOOL: ToolDefinition = {
   type: 'function',

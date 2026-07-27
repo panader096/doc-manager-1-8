@@ -10,6 +10,15 @@ const MESSAGE_SELECT = 'id, role, content, created_at, model, total_tokens'
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>
 
+// Starting thresholds, not empirically tuned -- gives the model a legible
+// word instead of a raw float to reason about "weak, irrelevant, or empty"
+// results with, per the existing system prompt instruction.
+function similarityBand(similarity: number): 'strong match' | 'moderate match' | 'weak match' {
+  if (similarity >= 0.5) return 'strong match'
+  if (similarity >= 0.38) return 'moderate match'
+  return 'weak match'
+}
+
 export async function runSearchNotesTool(supabase: ServerSupabase, query: string): Promise<string> {
   const chunks = await searchNoteChunks(query)
   if (chunks.length === 0) return "No matching chunks were found in the user's notes for this query."
@@ -22,7 +31,7 @@ export async function runSearchNotesTool(supabase: ServerSupabase, query: string
   return chunks
     .map(
       (c, i) =>
-        `${i + 1}. Note "${titleById.get(c.note_id) ?? 'Untitled'}" (similarity ${c.similarity.toFixed(2)}): ${c.content}`,
+        `${i + 1}. Note "${titleById.get(c.note_id) ?? 'Untitled'}" (${similarityBand(c.similarity)}, similarity ${c.similarity.toFixed(2)}): ${c.content}`,
     )
     .join('\n')
 }
