@@ -7,18 +7,27 @@ const DEFAULT_MAX_TOKENS = 1024
 
 // The only model slugs a user's stored preference (user_settings.chat_model/
 // harry_model) is allowed to select -- must match ModelSelector.tsx's
-// MODEL_OPTIONS. Enforced at every read site (never trust the stored value
-// directly) so a user editing their own row via the raw Supabase client
-// can't point their own requests at an arbitrary, unvetted, or expensive
-// model billed to this app's single shared OPENROUTER_API_KEY.
-export const ALLOWED_MODELS = [
+// MODEL_OPTIONS_BY_APP for the corresponding app. Enforced at every read
+// site (never trust the stored value directly) so a user editing their own
+// row via the raw Supabase client can't point their own requests at an
+// arbitrary, unvetted, or expensive model billed to this app's single
+// shared OPENROUTER_API_KEY. Harry's list swaps Sonnet for a free-tier
+// model (no OpenRouter spend) since document QA doesn't need Sonnet's extra
+// reasoning cost the same way general chat might; /chat keeps Sonnet.
+export const CHAT_ALLOWED_MODELS = [
   'anthropic/claude-haiku-4.5',
   'anthropic/claude-sonnet-5',
   'google/gemini-2.5-flash',
 ] as const
 
-export function sanitizeModel(model: string | null | undefined): string | undefined {
-  return model && (ALLOWED_MODELS as readonly string[]).includes(model) ? model : undefined
+export const HARRY_ALLOWED_MODELS = [
+  'anthropic/claude-haiku-4.5',
+  'google/gemma-4-26b-a4b-it:free',
+  'google/gemini-2.5-flash',
+] as const
+
+export function sanitizeModel(model: string | null | undefined, allowedModels: readonly string[]): string | undefined {
+  return model && allowedModels.includes(model) ? model : undefined
 }
 // Pinned per the Embeddings section of CLAUDE.md -- do not change without
 // dropping and re-embedding all documents.

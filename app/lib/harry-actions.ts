@@ -2,7 +2,7 @@
 'use server'
 
 import { createClient } from './supabase/server'
-import { createChatCompletion, createEmbeddings, sanitizeModel, type ChatMessage as AiChatMessage } from './ai'
+import { createChatCompletion, createEmbeddings, sanitizeModel, HARRY_ALLOWED_MODELS, type ChatMessage as AiChatMessage } from './ai'
 import { ingestDocument, IngestRejectedError, INGEST_MAX_BYTES } from './harry-ingest'
 import type { ReviewerChat, ReviewerMessage } from './harry'
 
@@ -137,7 +137,7 @@ export async function sendMessage(
   if (!user) throw new Error('Not signed in')
 
   const { data: settings } = await supabase.from('user_settings').select('harry_model').eq('user_id', user.id).maybeSingle()
-  const model = sanitizeModel(settings?.harry_model)
+  const model = sanitizeModel(settings?.harry_model, HARRY_ALLOWED_MODELS)
 
   const { data: chat, error: chatError } = await supabase
     .from('reviewer_chats')

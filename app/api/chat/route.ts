@@ -3,6 +3,7 @@ import {
   createChatCompletion,
   createChatCompletionStream,
   sanitizeModel,
+  CHAT_ALLOWED_MODELS,
   type ChatMessage as AiChatMessage,
 } from '../../lib/ai'
 import { runSearchNotesTool } from '../../lib/chat-actions'
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
   }
 
   const { data: settings } = await supabase.from('user_settings').select('chat_model').eq('user_id', user.id).maybeSingle()
-  const model = sanitizeModel(settings?.chat_model)
+  const model = sanitizeModel(settings?.chat_model, CHAT_ALLOWED_MODELS)
 
   let imagePath: string | null = null
   let imageSignedUrl: string | null = null

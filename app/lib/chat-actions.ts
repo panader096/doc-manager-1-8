@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from './supabase/server'
-import { createChatCompletion, sanitizeModel, type ChatMessage as AiChatMessage } from './ai'
+import { createChatCompletion, sanitizeModel, CHAT_ALLOWED_MODELS, type ChatMessage as AiChatMessage } from './ai'
 import { searchNoteChunks } from './embeddings-actions'
 import { SYSTEM_PROMPT, SEARCH_NOTES_TOOL, MAX_TOOL_ROUNDS } from './chat-shared'
 import type { ChatMessage } from './chat'
@@ -48,7 +48,7 @@ export async function sendMessage(
   if (!user) throw new Error('Not signed in')
 
   const { data: settings } = await supabase.from('user_settings').select('chat_model').eq('user_id', user.id).maybeSingle()
-  const model = sanitizeModel(settings?.chat_model)
+  const model = sanitizeModel(settings?.chat_model, CHAT_ALLOWED_MODELS)
 
   let imagePath: string | null = null
   let imageSignedUrl: string | null = null
