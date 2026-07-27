@@ -2,57 +2,52 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Scope note for this review:** this repo also contains a Doc Manager (`/docs`, Sprint 1) and a Notes app + Auth workspace (`/notes`, `/workspace`, Sprint 2) — both still live and running, sharing the same Supabase project and codebase conventions. This file is scoped to **Sprint 3 only** (Personal Journal, Chat, Harry, and the extra-features work built on top of them) and does not document Doc Manager's or Notes' internals. The one exception: Chat's RAG search reads from a `documents`/`match_documents` pair that was added *as* Sprint 3 work on top of the pre-existing Notes tables — that piece is documented below since Sprint 3 code depends on it.
+
 ## Project
 
-This repo now contains six apps sharing one Supabase project:
+Three apps make up Sprint 3, all sharing one Supabase project with the pre-existing Doc Manager/Notes/Auth apps:
 
-- **Doc manager** (`/docs`) — the original personal document management app. Documents have a unique URL (e.g. `/docs/abc123`); data was originally localStorage-only and is being migrated to Supabase. Still fully public, no login required.
-- **Notes app** (`/notes`) — a Supabase-native notes app with collections, tags, search, pinning, archiving, and collection sharing via link. **Requires signing in** — every note, collection, tag, and search-history row belongs to exactly one user (`user_id`, enforced by RLS), so each signed-in user only ever sees their own data. The one deliberate exception: `/shared/[token]` stays anonymously readable, since that's the point of a share link.
-- **Personal Journal** (`/journal`) — a Supabase-native daily journal: one entry per calendar day per user, editable, full-text searchable, one optional image per entry. **Requires signing in**, same user-scoped RLS pattern as notes, with zero anon surface anywhere (no sharing feature exists for this app).
-- **Sprint 3.6 - Chat** (`/chat`) — a single, persistent AI chat conversation per signed-in user, backed by OpenRouter. **Requires signing in**, same user-scoped RLS pattern as notes/journal, zero anon surface. See "AI model calls" below for the server-only constraint on this app's model calls.
-- **Sprint 3.8 - Intelligent Doc Reviewer** (`/harry`) — the AI-centric app for this sprint. The user uploads a PDF and asks an AI reviewer ("Harry") expert questions about it; every answer is grounded strictly in that document, with a page citation and a self-rated confidence per claim, after a hidden self-validation pass. **The AI is not a feature bolted onto this app — it *is* the app**: strip out the model calls and there's nothing left but a file upload with no way to ever read or query what's in it. Multiple independent, named chats per user, each scoped to one uploaded document. **Requires signing in**, same user-scoped RLS pattern as notes/journal/chat, zero anon surface. See "AI model calls" and "Embeddings" below.
-- **Workspace** (`/workspace`) — a minimal placeholder area proving out Supabase Auth (email/password, Google, and GitHub). Requires signing in, same as `/notes`, `/journal`, `/chat`, and `/harry`.
+- **Personal Journal** (`/journal`) — a Supabase-native daily journal: one entry per calendar day per user, editable, full-text searchable, one optional image per entry. **Requires signing in**, user-scoped RLS pattern, zero anon surface anywhere (no sharing feature exists for this app).
+- **Chat** (`/chat`) — a single, persistent AI chat conversation per signed-in user, backed by OpenRouter, with streaming responses and model-driven RAG search over the user's own Notes. **Requires signing in**, user-scoped RLS, zero anon surface. See "AI model calls" below for the server-only constraint on this app's model calls.
+- **Harry** (`/harry`) — the AI-centric app of this sprint, and its core deliverable. The user uploads a PDF and asks an AI reviewer ("Harry") expert questions about it; every answer is grounded strictly in that document, with a page citation and a self-rated confidence per claim, after a hidden self-validation pass. **The AI is not a feature bolted onto this app — it *is* the app**: strip out the model calls and there's nothing left but a file upload with no way to ever read or query what's in it. Multiple independent, named chats per user, each scoped to one uploaded document. **Requires signing in**, user-scoped RLS, zero anon surface except one deliberate, narrow exception: a single shared answer can be made anonymously readable via `/harry-shared/[token]`.
 
 ## User experience
 
-**Doc manager** is a two-pane workspace:
-- **Left sidebar** — lists all documents; has a search box that filters by title as the user types; a single "New document" button creates a document instantly
-- **Right content area** — shows the selected document; the user types a title and body; changes save automatically (no save button)
-
-Each document has its own URL (`/docs/abc123`) so bookmarking or sharing a link takes the user directly to that document.
-
-**Notes app** is also a two-pane workspace:
-- **Left sidebar** (`NotesSidebar.tsx`) — collections as expandable, drag-to-reorder groups, an always-visible "Uncollected" group, a collapsible "Archive" section, live server-side search with recent-search suggestions, a tag filter, and a dark/light toggle at the bottom
-- **Right content area** (`NoteEditor.tsx`) — title, body (autosaves), a collection picker, and a tag editor
-- Notes can be pinned (float to the top of their collection), archived (hidden from the main view without deleting), and moved between collections by dragging
-- A collection can be shared read-only via a generated link at `/shared/[token]` — no auth, no sidebar, view-only
-
-**Personal Journal** is also a two-pane workspace:
+**Personal Journal** is a two-pane workspace:
 - **Left sidebar** (`JournalSidebar.tsx`) — entries listed by date (newest first), a "Today" button that opens today's entry or creates it if it doesn't exist yet, live full-text search, and a dark/light toggle at the bottom
 - **Right content area** (`JournalEditor.tsx`) — the entry's date (read-only), title, body (autosaves), and a single optional image
 - No tags, no collections, no export, no sharing — deliberately narrower in scope than the notes app
 - A signed-in-only header (workspace link, user email, sign-out) sits above the two panes
 
-**Sprint 3.6 - Chat** is a single-pane workspace (no sidebar — one conversation per user, nothing to list):
-- **Message list** (`ChatView.tsx`) — scrollable history, user messages right-aligned in an accent bubble, assistant replies left-aligned in a `--bg-modal` bubble, auto-scrolls to the newest message
-- **Input area** — a textarea (Enter to send, Shift+Enter for a newline) and a Send button, pinned to the bottom
-- The full conversation is replayed to the model on every turn (via `sendMessage()` in `chat-actions.ts`), which is how it "remembers" earlier turns — no separate memory store
-- **Sprint 3.7 - RAG:** the model decides for itself whether to search the user's notes, via a `search_notes` tool (OpenRouter/OpenAI-compatible native tool-calling in `sendMessage()` — no agent framework). The tool's implementation is `searchNoteChunks()` (`embeddings-actions.ts`): embeds the model's query and calls `match_documents`, always scoped to the signed-in user via `p_user_id` — the model only ever supplies the query text, never a user id. `sendMessage()` runs a bounded loop (`MAX_TOOL_ROUNDS = 3`): if the model calls the tool, results (with note titles and similarity) are appended and the model is called again, so it can rewrite and re-search when results look weak rather than answer from a poor match; the last round omits the tool entirely, forcing a plain answer so the loop always terminates. A general-knowledge question the model judges unrelated to notes (e.g. "what is Paris the capital of?") gets answered directly, no search at all. Only the final assistant answer is persisted to `chat_messages` — intermediate tool-call/tool-result messages exist only for that turn's in-memory round-trips, so the stored history and full-history replay above (the "memory" mechanism) are unaffected
-- No threads, no streaming, no message editing/deletion — see `docs/superpowers/specs/2026-07-21-sprint-3.6-chat-design.md` for the full list of deliberate non-goals
-- A signed-in-only header (workspace link, user email, sign-out) sits above the message list, same as journal
+**Chat** is a single-pane workspace (no sidebar — one conversation per user, nothing to list):
+- **Message list** (`ChatView.tsx`) — scrollable history, user messages right-aligned in an accent bubble, assistant replies left-aligned in a `--bg-modal` bubble, auto-scrolls to the newest message, streams in token-by-token
+- **Input area** — a textarea (Enter to send, Shift+Enter for a newline), an attach-image button, and a Send button, pinned to the bottom
+- The full conversation is replayed to the model on every turn, which is how it "remembers" earlier turns — no separate memory store
+- **RAG search**: the model decides for itself whether to search the user's notes, via a `search_notes` tool (OpenRouter/OpenAI-compatible native tool-calling). The tool's implementation is `searchNoteChunks()` (`embeddings-actions.ts`): embeds the model's query and calls `match_documents`, always scoped to the signed-in user via `p_user_id`. `sendMessage()`/the streaming route run a bounded loop (`MAX_TOOL_ROUNDS = 3`): if the model calls the tool, results (with note titles, a legible similarity-band label, and raw similarity score) are appended and the model is called again, so it can rewrite and re-search when results look weak. A multi-part question is expected to trigger separate searches per sub-question rather than one broad query. A general-knowledge question the model judges unrelated to notes gets answered directly, no search at all.
+- **Streaming**: hand-rolled Server-Sent Events via a `POST /api/chat` Route Handler (no Vercel AI SDK). The route resolves any tool rounds first (non-streamed), then either reuses that round's already-generated content (flushed as simulated progressive chunks, avoiding a second redundant model call) or, in the rare case every round used a tool, makes one genuine streaming call.
+- **Multimodal input**: an optional image can attach to a single message; only the *current* turn's image is ever sent as real image content — past images collapse to a text marker (`[Attached image: name]`) when replayed as history.
+- **Per-user model choice**: Haiku 4.5, Sonnet 5, or Gemini 2.5 Flash, via a dropdown in the header, persisted per user.
+- **Model + token-usage transparency**: every assistant reply shows which model actually answered and its token count.
+- No threads, no message editing/deletion.
+- A signed-in-only header (workspace link, model selector, user email, sign-out) sits above the message list.
 
-**Sprint 3.8 - Intelligent Doc Reviewer** is a two-pane workspace, unlike `/chat` (which has no sidebar since there's only ever one conversation):
-- **Left sidebar** (`HarrySidebar.tsx`) — lists the user's chats with Harry (name, uploaded PDF filename, a processing/failed status badge while ingestion runs), a "+ New chat" control that opens an inline name + PDF-upload form, rename (pencil icon → inline edit) and delete (× icon → confirmation modal, same pattern as `JournalSidebar.tsx`)
-- **Right content area** (`HarryChatView.tsx`) — message history styled like `ChatView.tsx` (user right-aligned, Harry left-aligned), except Harry's replies render each claim with an inline badge showing its page number and confidence (`[p. N; confidence: High|Medium|Low]` markers parsed out of the stored text by `parseHarryClaims()` in `harry.ts`); input is disabled until the chat's document finishes processing
+**Harry** is a two-pane workspace, unlike `/chat` (which has no sidebar since there's only ever one conversation):
+- **Left sidebar** (`HarrySidebar.tsx`) — lists the user's chats with Harry (name, uploaded PDF filename, a processing/failed status badge while ingestion runs), a "+ New chat" control that opens an inline name + PDF-upload form, rename and delete (confirmation modal)
+- **Right content area** (`HarryChatView.tsx`) — message history styled like `ChatView.tsx` (user right-aligned, Harry left-aligned), except Harry's replies render each claim with an inline badge showing its page number and confidence (`[p. N; confidence: High|Medium|Low]` markers parsed out of the stored text by `parseHarryClaims()` in `harry.ts`); input is disabled until the chat's document finishes processing; a model selector and image-attach control sit alongside; a "Share" control appears under each of Harry's own replies
 - **Ingestion**: uploading a PDF triggers `createChat()` (`harry-actions.ts`), which parses it with `pdfjs-dist` page-by-page, chunks and embeds each page's text, and only then flips the chat to usable — a PDF over 100 pages/20MB, or one with no extractable text (scanned/image-only), is rejected with a reason shown in the sidebar rather than silently failing
 - **Answering**: unlike `/chat`'s `search_notes` tool (which the model can choose to skip), retrieval here is mandatory and automatic on every message — Harry is never given the option to answer without the document's own text in front of it. Each turn also runs a hidden second model call that re-checks the first draft against the same retrieved pages before anything is shown to the user or persisted; see "AI model calls" below
+- **Persona**: Harry answers only from document excerpts, never general knowledge; if a question is about the conversation itself (e.g. "what did I ask earlier?") rather than the document, it answers directly from visible history with no citation marker — the citation/confidence rule applies specifically to claims about the document's content
+- **Multimodal input**: an image can attach to a single question, alongside the chat's mandatory document grounding — it's additional context for that one question, seen by both the draft and the hidden validation call; retrieval itself stays text-query-only
+- **Per-user model choice**, including a free ($0) option — see "Features already implemented" below
+- **Shareable answers**: a "Share" button on any assistant reply produces a public, read-only, text-only link at `/harry-shared/[token]`; revocable
 - A signed-in-only header (workspace link, user email, sign-out) sits above the two panes, same as journal/chat
 
 ## Stack
 - Next.js with the App Router
 - TypeScript
 - Tailwind CSS for all styling
-- Supabase (PostgreSQL) — the app is migrating from localStorage to Supabase; both may coexist during the transition
+- Supabase (PostgreSQL, Auth, Storage, pgvector)
 
 ## Running the app
 Run `npm run dev`. The app runs at http://localhost:3000.
@@ -61,23 +56,14 @@ Run `npm run dev`. The app runs at http://localhost:3000.
 Playwright tests live in `e2e/`, run with `npm run test:e2e` (`playwright.config.ts` reuses an already-running dev server on port 3000 rather than starting a second one). Tests sign in as a dedicated test account (`paulbakker90+e2etest@gmail.com`, seeded directly into `auth.users`/`auth.identities` via SQL rather than the real signup form, since Supabase's built-in test mailer hard-caps confirmation emails at a couple per hour — see `docs/REFLECTION-journal.md`) — never use a real user's account for automated tests.
 
 ## Routing
-- `/` — document list (home)
-- `/docs/[id]` — individual document page, where `id` is a unique identifier
-- `/notes` — notes home (empty state / select-a-note prompt)
-- `/notes/[id]` — individual note, where `id` is the note's numeric `notes.id`
-- `/shared/[token]` — public, read-only view of a collection shared via `collections.share_token`; no sidebar, no auth
 - `/journal` — journal home (empty state / select-or-start-today prompt)
 - `/journal/[id]` — individual journal entry, where `id` is the entry's numeric `journal_entries.id`
-- `/chat` — the single AI chat conversation for the signed-in user (Sprint 3.6 - Chat)
+- `/chat` — the single AI chat conversation for the signed-in user
 - `/harry` — Harry home (empty state / select-or-start-a-chat prompt)
 - `/harry/[id]` — an individual chat with Harry, where `id` is the chat's numeric `reviewer_chats.id`
-- `/login` — sign in with email/password or Google
-- `/signup` — create an account with email/password
-- `/forgot-password` — request a password-reset email
-- `/reset-password` — set a new password; only reachable via a valid recovery link/session
-- `/auth/callback` — OAuth callback route; exchanges the Google or GitHub auth code for a session, then redirects to `/workspace`
-- `/auth/confirm` — email-link verification route (`token_hash` + `type`); used by the password-recovery email, redirects to `?next=` (default `/workspace`) on success or `/login` with an error on failure
+- `/harry-shared/[token]` — public, read-only, anonymously-readable view of one shared Harry answer; no sidebar, no auth
 - `/workspace` — signed-in-only placeholder area; every page under it requires a session (see Authentication below)
+- `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/auth/callback`, `/auth/confirm` — Supabase Auth flows, shared across every signed-in app in this repo (predates Sprint 3)
 
 ## Credentials
 
@@ -86,6 +72,7 @@ All Supabase credentials live in `.env.local` and are never hardcoded in source 
 ```
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+OPENROUTER_API_KEY=...
 ```
 
 Do not add, rename, or remove these keys without updating every file that reads them.
@@ -94,69 +81,47 @@ Do not add, rename, or remove these keys without updating every file that reads 
 
 Each app has exactly one data-access module. **No component or page may import a Supabase client directly** — always go through the relevant module below.
 
-- **Doc manager**: `app/lib/documents.ts`. The `Doc` and `Folder` interfaces there are the canonical shapes; extend them first before touching any other file.
-- **Notes app**: `app/lib/db.ts`. The `Note`, `NoteListItem`, `NoteTag`, `Collection`, and `Tag` interfaces there are the canonical shapes; extend them first before touching any other file.
 - **Personal Journal**: `app/lib/journal.ts`. The `JournalEntry` interface there is the canonical shape; extend it first before touching any other file.
-- **Sprint 3.6 - Chat**: `app/lib/chat.ts` **and** `app/lib/chat-actions.ts` — a deliberate two-file exception to "exactly one module," forced by Next.js: it disallows an inline `'use server'` Server Action inside a plain file that's imported by a Client Component (confirmed by an actual `next build` failure during implementation). `chat.ts` holds the canonical `ChatMessage` interface and `getMessages()` (a client-safe read, same pattern as `journal.ts`); `chat-actions.ts` is a file-level `'use server'` module holding only `sendMessage()` (inserts the user message, replays full history to OpenRouter via `app/lib/ai.ts`, inserts the reply) — same file-level-`'use server'` convention as `auth.ts`. Extend `chat.ts` for new reads, `chat-actions.ts` for new server-only mutations.
-- **Sprint 3.8 - Intelligent Doc Reviewer**: three files, extending the chat app's two-file split with a third for the ingestion pipeline specifically (kept separate from `harry-actions.ts` since it's substantial enough to warrant its own module, and has no Server Action exports of its own — it's a plain server-only module imported only by `harry-actions.ts`). `app/lib/harry.ts` holds the canonical `ReviewerChat`/`ReviewerMessage`/`HarryClaim` interfaces, client-safe reads (`getChats()`, `getChat()`, `getMessages()`), and `parseHarryClaims()` (parses the `[p. N; confidence: X]` markers out of a stored reply for the UI to render as badges). `app/lib/harry-ingest.ts` is the PDF parse/chunk/embed pipeline (`ingestDocument()`, `pdfjs-dist`-based). `app/lib/harry-actions.ts` is the file-level `'use server'` module: `createChat()`, `sendMessage()`, `renameChat()`, `deleteChat()`. Extend `harry.ts` for new reads, `harry-actions.ts` for new server-only mutations, `harry-ingest.ts` only if the ingestion pipeline itself changes.
+- **Chat**: `app/lib/chat.ts` **and** `app/lib/chat-actions.ts` **and** `app/lib/chat-shared.ts` — a deliberate three-file split, forced by Next.js: it disallows an inline `'use server'` Server Action inside a plain file that's imported by a Client Component, and separately disallows a non-async-function export (a plain string/object constant) from a file marked `'use server'`. `chat.ts` holds the canonical `ChatMessage` interface and `getMessages()`/`getChatImageUrl()` (client-safe reads); `chat-shared.ts` is a plain (non-`'use server'`) module holding `SYSTEM_PROMPT`, `SEARCH_NOTES_TOOL`, `MAX_TOOL_ROUNDS` — needed by both `chat-actions.ts` and the streaming route below; `chat-actions.ts` is a file-level `'use server'` module holding `sendMessage()` (the non-streaming path, still functionally correct but not the live UI's send path since streaming shipped) and `runSearchNotesTool()`. The actual live send path for `/chat` is `app/api/chat/route.ts`, a Route Handler (not a Server Action, since streaming a token-by-token response isn't expressible as a single resolved Server Action return value).
+- **Harry**: three files. `app/lib/harry.ts` holds the canonical `ReviewerChat`/`ReviewerMessage`/`HarryClaim`/`SharedReviewerMessage` interfaces, client-safe reads (`getChats()`, `getChat()`, `getMessages()`, `getReviewerImageUrl()`), `parseHarryClaims()`, and the sharing functions (`createShare()`, `revokeShare()`, `getShareToken()`, `getSharedMessage()` — the last goes through a `SECURITY DEFINER` RPC, not a direct table query, see "Harry (doc reviewer) app schema" below). `app/lib/harry-ingest.ts` is the PDF parse/chunk/embed pipeline (`ingestDocument()`, `pdfjs-dist`-based), a plain server-only module imported only by `harry-actions.ts`. `app/lib/harry-actions.ts` is the file-level `'use server'` module: `createChat()`, `sendMessage()`, `renameChat()`, `deleteChat()`.
+- **Notes-embedding pipeline (Sprint 3 work on a pre-existing Sprint 2 table)**: `app/lib/embeddings-actions.ts` holds `searchNoteChunks()`, called by Chat's `search_notes` tool. It reads from the `documents` table (added in migration `0020`, one row per embedded note chunk) via the `match_documents` RPC. The Notes app's own CRUD (collections, tags, note creation) predates this sprint and is out of scope here.
 
 For any app: add a new named function to the relevant module for every new data operation. Schema changes (new tables, columns, indexes, RLS policies) go in `supabase/migrations/` as numbered SQL files.
 
-### Notes app schema
-
-Tables (all lowercase): `notes` (`id`, `title`, `body`, `created_at`, `updated_at`, `collection_id` → `collections.id` nullable, `pinned` boolean, `archived_at` nullable timestamptz, `search_vector` generated tsvector column with a GIN index, `image_path` nullable text, `user_id`), `collections` (`id`, `name`, `created_at`, `position` integer for manual ordering, `share_token` nullable unique text, `user_id`), `tags` (`id`, `name`, `color`, `user_id`), `note_tags` (`note_id`, `tag_id`, composite primary key — join table, no `user_id` of its own), `search_history` (`id`, `query`, `searched_at`, `user_id`, unique on `(user_id, query)`, capped at 5 rows per user).
-
-A note belongs to at most one collection (`collection_id` is nullable — a note can also belong to none); a collection can contain many notes. A note can carry many tags and a tag can apply to many notes, via `note_tags`.
-
-**Every table is scoped to the signed-in user.** `notes`/`collections`/`tags`/`search_history` each have a `user_id uuid not null default auth.uid() references auth.users(id)`; RLS policies are `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` — one policy per table covering select/insert/update/delete, not four separate ones (a deliberate simplification once the predicate is identical across all four commands). `note_tags` has no `user_id` column of its own; its policy checks ownership through the referenced `notes` row (and, in `WITH CHECK`, the referenced `tags` row too, so a user can't link their own note to someone else's tag).
-
-**Exception:** `/shared/[token]` (`getSharedCollection()` in `db.ts`) needs to keep working for anonymous visitors. Rather than any blanket anon access, there are four narrow, explicit anon `SELECT`-only policies — `collections` where `share_token is not null`, and `notes`/`note_tags`/`tags` cascading through that same collection. This is the *only* anon access anywhere in the notes schema (Storage aside — see below); don't broaden it when adding new tables — anon gets nothing by default, and any new anon exception should be this same narrow, explicit shape.
-
-**What happens when a note is created** (for the review call): `createNote()` in `db.ts` inserts a row with no explicit `user_id` value. Postgres fills it in itself, from the column default `auth.uid()` — a function that reads the caller's ID out of the JWT the Supabase client sent with the request. Nothing in the application code ever passes `user_id` around; ownership is stamped on by the database at insert time, not decided by a page or component. From then on, that same `user_id` is what every RLS policy checks (`auth.uid() = user_id`) to decide whether the signed-in user is allowed to see, update, or delete that row — so even a bug in the UI that requested "all notes" would still only get back the rows belonging to whoever is signed in.
-
-### Note images (Supabase Storage)
-
-One optional image per note, stored in the private `note-images` Storage bucket — never as base64 in the database. `notes.image_path` holds the Storage object path (not a public URL); rendering always goes through a signed URL from `getNoteImageUrl()`.
-
-Path shape: `{user_id}/{note_id}/image.{ext}` — a stable filename per note, so re-uploading replaces the current image (`uploadNoteImage()` in `db.ts` deletes the old object first if the extension changed, so nothing is orphaned). `storage.objects` RLS mirrors the table pattern: one `for all to authenticated` policy scoped to `(storage.foldername(name))[1] = auth.uid()::text` (the owner's folder), plus one narrow anon `SELECT`-only policy extending the `/shared/[token]` exception above to cover images on notes within a shared collection. **When writing a Storage policy that joins back to `notes`/`collections` inside an `EXISTS` subquery, qualify `storage.objects.name` explicitly** — `collections` also has a `name` column, and an unqualified `name` resolves to the closer-scoped one, silently matching nothing (this broke migration `0013` on the first pass; fixed in `0014`).
-
 ### Journal app schema
 
-One table: `journal_entries` (`id`, `user_id`, `entry_date` date, `title`, `body`, `image_path` nullable text, `search_vector` generated tsvector column with a GIN index, `created_at`, `updated_at`), with `unique (user_id, entry_date)` enforcing one entry per calendar day per user at the database level — not just in the UI. No tags, no collections, no `note_tags`-equivalent join table.
+One table: `journal_entries` (`id`, `user_id`, `entry_date` date, `title`, `body`, `image_path` nullable text, `search_vector` generated tsvector column with a GIN index, `created_at`, `updated_at`), with `unique (user_id, entry_date)` enforcing one entry per calendar day per user at the database level — not just in the UI. No tags, no collections.
 
-Same user-scoping pattern as notes: `user_id uuid not null default auth.uid() references auth.users(id)`, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy covering select/insert/update/delete. **Zero anon access anywhere** — unlike notes, the journal has no sharing feature, so there is no anon exception at all; don't add one without a documented reason.
+Same user-scoping pattern as every table in this project: `user_id uuid not null default auth.uid() references auth.users(id)`, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy covering select/insert/update/delete. **Zero anon access anywhere** — no sharing feature, so there is no anon exception at all.
 
-### Journal images (Supabase Storage)
-
-Same pattern as note images: one optional image per entry, private `journal-images` bucket, `journal_entries.image_path` holds the Storage object path, rendering goes through a signed URL from `getEntryImageUrl()`. Path shape `{user_id}/{entry_id}/image.{ext}`. `storage.objects` RLS is a single `for all to authenticated` policy scoped to `(storage.foldername(name))[1] = auth.uid()::text` — no anon read policy, since (again) there's no sharing feature for this app.
+One optional image per entry, private `journal-images` Storage bucket, `journal_entries.image_path` holds the Storage object path, rendering goes through a signed URL from `getEntryImageUrl()`. Path shape `{user_id}/{entry_id}/image.{ext}`. Owner-folder RLS, no anon read policy.
 
 ### Chat app schema
 
-One table: `chat_messages` (`id`, `user_id`, `role` text constrained via `check (role in ('user', 'assistant'))`, `content`, `created_at`) — an append-only log, one ongoing conversation per user. No threads, no title, no `updated_at` (messages aren't edited).
+One table: `chat_messages` (`id`, `user_id`, `role` — `check (role in ('user', 'assistant'))`, `content`, `created_at`, `model` nullable text, `total_tokens` nullable integer, `image_path` nullable text) — an append-only log, one ongoing conversation per user. `model`/`total_tokens` persist which OpenRouter model slug and token count produced each assistant reply, for the transparency feature. No threads, no title.
 
-Same user-scoping pattern as notes/journal: `user_id uuid not null default auth.uid() references auth.users(id)`, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy covering select/insert/update/delete. **Zero anon access anywhere** — no sharing feature for this app either.
+Same user-scoping pattern: `user_id uuid not null default auth.uid() references auth.users(id)`, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy. **Zero anon access anywhere.**
 
-No Storage bucket — chat has no images.
+One optional image per message, private `chat-images` Storage bucket (5MB limit, image mime types only), owner-folder RLS, short-lived signed URLs for both model-facing content and UI display.
+
+`user_settings` (shared with Harry, see below) holds `chat_model` — validated server-side against `CHAT_ALLOWED_MODELS` in `app/lib/ai.ts` before ever being passed to `createChatCompletion()`, since a user could otherwise edit their own row directly via the Supabase client and point requests at an arbitrary, unvetted, or expensive model billed to this app's single shared `OPENROUTER_API_KEY`.
 
 ### Harry (doc reviewer) app schema
 
-Three tables, migration `0021_reviewer_schema.sql`:
+Four tables:
 
 - `reviewer_chats` (`id`, `user_id`, `title`, `doc_filename`, `doc_path`, `doc_status` — `check (doc_status in ('processing', 'ready', 'failed'))`, `doc_status_reason` nullable, `created_at`) — one row per chat, one PDF per chat, fixed at creation
-- `reviewer_messages` (`id`, `user_id`, `chat_id` → `reviewer_chats.id` `on delete cascade`, `role` — `check (role in ('user', 'assistant'))`, `content`, `created_at`) — full history is replayed to the model on every turn, same "memory" mechanism as `chat_messages`, just scoped by `chat_id` instead of being the only conversation
-- `reviewer_doc_chunks` (`id`, `user_id`, `chat_id` → `reviewer_chats.id` `on delete cascade`, `page int not null`, `content`, `embedding extensions.vector(1536)`) — the RAG store for this app; see "Embeddings" below
+- `reviewer_messages` (`id`, `user_id`, `chat_id` → `reviewer_chats.id` `on delete cascade`, `role` — `check (role in ('user', 'assistant'))`, `content`, `created_at`, `model` nullable text, `total_tokens` nullable integer, `image_path` nullable text) — full history is replayed to the model on every turn, same "memory" mechanism as `chat_messages`
+- `reviewer_doc_chunks` (`id`, `user_id`, `chat_id` → `reviewer_chats.id` `on delete cascade`, `page int not null`, `content`, `embedding vector(1536)`) — the RAG store for this app
+- `reviewer_shares` (`id`, `user_id`, `message_id` → `reviewer_messages.id` `on delete cascade`, `share_token` unique text, `created_at`) — one row per active share; **every row in this table is an active share by construction**
 
-Same user-scoping pattern as every other table in this project: `user_id uuid not null default auth.uid() references auth.users(id)`, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy per table covering select/insert/update/delete. **Zero anon access anywhere** — no sharing feature for this app either.
+Same user-scoping pattern as every table in this project. **Anon access is one deliberate, narrow exception**, not a blanket one: the *only* anon-reachable surface is a `SECURITY DEFINER` RPC, `get_shared_reviewer_message(p_token text) returns table (content text, created_at timestamptz)`. There is **no anon SELECT policy on `reviewer_shares` or `reviewer_messages` at all** — an earlier version of this feature (migration `0026`) shipped exactly that (an unfiltered anon `SELECT` on `reviewer_shares`, plus a `reviewer_messages` policy that checked "was this message shared by *anyone*" rather than "did the caller present the matching token"), which let any anonymous visitor enumerate every share token and read every shared message by guessing small sequential ids. Migration `0027` dropped both broken policies and replaced them with the token-parameterized RPC — the token must be supplied to get anything back, and `share_token` is never returned to the client. **Do not reintroduce a direct anon SELECT policy on either table** — any future sharing-adjacent feature must go through a similarly scoped RPC, not a raw table grant.
 
-Retrieval goes through its own RPC, `match_reviewer_chunks(query_embedding, match_threshold, match_count, p_user_id, p_chat_id)` — deliberately a separate function from the notes app's `match_documents`, scoped by both user and chat so one chat's chunks never leak into another chat's answers even for the same user. `security invoker` with `set search_path = public, extensions` set explicitly (migration `0020` initially shipped without this and failed on push — see that migration's history; `0021` includes the fix from the start).
+Retrieval goes through `match_reviewer_chunks(query_embedding, match_threshold, match_count, p_user_id, p_chat_id)` — scoped by both user and chat so one chat's chunks never leak into another chat's answers even for the same user. `security invoker` with `set search_path = public, extensions` set explicitly.
 
-### Harry documents (Supabase Storage)
+One PDF per chat, private `reviewer-docs` bucket (`file_size_limit` 20MB, `allowed_mime_types` restricted to `application/pdf`), path `{user_id}/{chat_id}/document.pdf`. `deleteChat()` removes the Storage object before deleting the `reviewer_chats` row — a failed Storage removal blocks the row delete, so a chat can never be deleted while leaving its PDF orphaned. One optional image per message, separate private `reviewer-images` bucket (kept apart from the PDF-only `reviewer-docs`), same owner-folder RLS pattern.
 
-One PDF per chat, private `reviewer-docs` bucket (`file_size_limit` 20MB, `allowed_mime_types` restricted to `application/pdf`), path `{user_id}/{chat_id}/document.pdf`. Same single `for all to authenticated` owner-folder policy as `note-images`/`journal-images` — no anon read policy, no sharing feature. `deleteChat()` in `harry-actions.ts` removes the Storage object before deleting the `reviewer_chats` row (not after) — a failed Storage removal blocks the row delete, so a chat can never be deleted while leaving its PDF orphaned with no row left to derive its path from.
-
-### Profile photos (Supabase Storage)
-
-One optional profile photo per signed-in user, shown on `/workspace`. Private `profile-photos` bucket, path `{user_id}/photo.{ext}`. Unlike notes/journal images, there is **no database table** for this — the photo's existence and path are looked up via `storage.objects.list()` in `app/lib/profile.ts` (there is at most one object per user's folder), since nothing else about a "profile" needs tracking yet. `storage.objects` RLS is the same single `for all to authenticated` policy pattern scoped to `(storage.foldername(name))[1] = auth.uid()::text` — no anon access.
+`user_settings` (`user_id` PK default `auth.uid()`, `chat_model` text, `harry_model` text, `updated_at`) is shared between Chat and Harry — one row per user, lazily created on first read. `harry_model` is validated server-side against `HARRY_ALLOWED_MODELS` in `app/lib/ai.ts`, a **different** allow-list than Chat's (Harry swaps Sonnet for a free-tier model — see "Features already implemented" below).
 
 ### Supabase client wrappers
 
@@ -166,7 +131,7 @@ Three thin wrappers own client creation — use the right one, never `createClie
 |---|---|
 | `app/lib/supabase/client.ts` | Client Components (`'use client'`) |
 | `app/lib/supabase/server.ts` | Server Components, Route Handlers, Server Actions |
-| `app/lib/supabase/middleware.ts` | Only `proxy.ts` at the project root — refreshes the session cookie on every request (Next.js renamed the `middleware.ts` convention to `proxy.ts`; the exported function is `proxy`, not `middleware`) |
+| `app/lib/supabase/middleware.ts` | Only `proxy.ts` at the project root — refreshes the session cookie on every request |
 
 The server client must be created inside each function that needs it — never as a module-level singleton (required for Next.js Fluid compute compatibility).
 
@@ -174,27 +139,31 @@ The server client must be created inside each function that needs it — never a
 
 **Rule for agent:** Every signed-in-only page must verify the user's session with the Supabase Auth server before it loads, and redirect to the sign-in page if the user is not signed in.
 
-- Use Supabase Auth for all sign-in and session handling — never build custom auth or store passwords yourself
-- Every page under `/workspace`, `/notes`, `/journal`, `/chat`, **and `/harry`** requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in. The proxy (`app/lib/supabase/middleware.ts`) enforces this as a first line of defense for all five path prefixes — every new signed-in-only app added to this repo must be added to its `isProtectedPath` check, not just given its own layout-level check
-- After a successful sign-in, redirect to `/workspace`
-- After sign-out, redirect to `/login`. Do not rely on the browser-side session alone.
-- A sign-out control must be reachable from within `/notes`, `/journal`, `/chat`, and `/harry`, not just `/workspace` (`NotesSidebar.tsx`'s footer; `journal/layout.tsx`'s header; `chat/layout.tsx`'s header; `harry/layout.tsx`'s header)
-- Never put the service-role/secret key in any `NEXT_PUBLIC_`-prefixed env var, or anywhere client-accessible — only the two keys listed under Credentials belong in this app at all
+- Every page under `/workspace`, `/journal`, `/chat`, and `/harry` requires a signed-in user; verify this on the server and redirect to `/login` if they are not signed in. The proxy (`app/lib/supabase/middleware.ts`) enforces this as a first line of defense — every new signed-in-only app added to this repo must be added to its `isProtectedPath` check, not just given its own layout-level check.
+- **`isProtectedPath` uses segment-bound matching, not a bare prefix, for `/harry` specifically**: `pathname === '/harry' || pathname.startsWith('/harry/')`, not `pathname.startsWith('/harry')`. A bare prefix check also matches `/harry-shared/[token]`, which must stay public — this exact bug shipped once (found and fixed the same day) before merge. The other four prefixes (`/workspace`, `/notes`, `/journal`, `/chat`) still use a bare `startsWith` — not currently broken (no sibling public route collides with any of them today), but the same class of bug would recur if one ever did; prefer the segment-bound form for any new prefix added here.
+- After a successful sign-in, redirect to `/workspace`. After sign-out, redirect to `/login`.
+- A sign-out control must be reachable from within `/journal`, `/chat`, and `/harry`, not just `/workspace`.
 
-Server-side session checks use **`supabase.auth.getUser()`** — not `getSession()` (never trust it server-side; it can be spoofed when cookie storage is shared with the client) and, in this project, not `getClaims()` either, even though it's Supabase's newer/faster recommendation — this project's rubric specifically calls for `getUser()`, so that's the standard here. If a diff introduces `getSession()` in server code (a Server Component, Route Handler, Server Action, or the proxy), flag it before merging. All auth calls (sign up, sign in, sign in with Google, sign out) go through `app/lib/auth.ts` — the same single-source-of-truth convention as `documents.ts`/`db.ts`, just for auth instead of data.
+Server-side session checks use **`supabase.auth.getUser()`** — not `getSession()` (never trust it server-side) and not `getClaims()` either, even though it's Supabase's newer/faster recommendation — this project's rubric specifically calls for `getUser()`. If a diff introduces `getSession()` in server code, flag it before merging.
 
 ## AI model calls
 
 - All LLM and embedding calls must happen server-side only. Never call OpenRouter from browser code.
 - `OPENROUTER_API_KEY` lives in `.env.local` and must never have a `NEXT_PUBLIC_` prefix or be passed to client components.
-- Model: `anthropic/claude-haiku-4.5` — `DEFAULT_MODEL` in `app/lib/ai.ts`, used by both apps that call `createChatCompletion()` (below). Chosen after starting on `openai/gpt-4o-mini`; if this changes again, update this line.
-- The connection itself lives in `app/lib/ai.ts` (`createChatCompletion()`, `createEmbeddings()`). Callers today, all file-level `'use server'` modules: `app/lib/chat-actions.ts`'s `sendMessage()` (Sprint 3.6 - Chat, full-history replay, model decides whether to call an optional `search_notes` tool); `app/lib/harry-actions.ts`'s `sendMessage()` (Sprint 3.8 - Harry, calls `createChatCompletion()` twice per turn — mandatory automatic retrieval feeds the first draft call, then a second hidden call validates that draft against the same retrieved pages before anything is shown to the user or persisted — see the Harry user-experience entry above); and `app/lib/harry-ingest.ts`'s `ingestDocument()` (called from `harry-actions.ts`'s `createChat()`, calls `createEmbeddings()` only, no chat completion). Any new feature that calls OpenRouter should follow the same shape: the call lives in a file-level `'use server'` module, never in a plain module imported by a Client Component (Next.js rejects inline `'use server'` functions in that shape — see the Sprint 3.6 - Chat data-access entry above).
+- The connection itself lives in `app/lib/ai.ts` (`createChatCompletion()`, `createChatCompletionStream()`, `createEmbeddings()`) — the single OpenRouter connection point for the whole app; extend it, never bypass it with a second `fetch()` call elsewhere.
+- **`DEFAULT_MODEL`**: `anthropic/claude-haiku-4.5`. Used whenever a user has no stored model preference yet.
+- **Per-user model choice, per app, with a server-side allow-list — this is a deliberate security boundary, not just a UI nicety:**
+  - `CHAT_ALLOWED_MODELS` = `anthropic/claude-haiku-4.5`, `anthropic/claude-sonnet-5`, `google/gemini-2.5-flash`
+  - `HARRY_ALLOWED_MODELS` = `anthropic/claude-haiku-4.5`, `google/gemma-4-26b-a4b-it:free`, `google/gemini-2.5-flash` — Harry swaps Sonnet for a free ($0) model; document QA doesn't need Sonnet's extra reasoning cost the way general chat might
+  - `sanitizeModel(model, allowedModels)` in `ai.ts` must be called at every site that reads a stored `chat_model`/`harry_model` before passing it to a completion call — an unrecognized value falls back to `undefined` (→ `DEFAULT_MODEL`), exactly like a missing settings row. **Never pass a stored model preference straight to `createChatCompletion()`/`createChatCompletionStream()` without sanitizing it first** — a user can otherwise edit their own `user_settings` row directly via the Supabase client and point their requests at an arbitrary, unvetted, or expensive model billed to this app's single shared key. Both `MODEL_OPTIONS_BY_APP` in `ModelSelector.tsx` and `CHAT_ALLOWED_MODELS`/`HARRY_ALLOWED_MODELS` in `ai.ts` must be kept in sync — the UI must never offer a slug the allow-list would then reject.
+- Callers of `createChatCompletion()`/`createChatCompletionStream()`, all file-level `'use server'` modules or Route Handlers: `app/api/chat/route.ts` (streaming, resolves tool rounds non-streamed then reuses that content or streams the final call); `app/lib/chat-actions.ts`'s `sendMessage()` (non-streaming fallback path, same tool-loop logic); `app/lib/harry-actions.ts`'s `sendMessage()` (calls `createChatCompletion()` twice per turn — mandatory automatic retrieval feeds the first draft call, then a second hidden call validates that draft against the same retrieved pages before anything is shown to the user or persisted).
+- Any new feature that calls OpenRouter should follow the same shape: the call lives in a file-level `'use server'` module or a Route Handler, never in a plain module imported by a Client Component (Next.js rejects inline `'use server'` functions in that shape, and rejects non-async-function exports from a `'use server'` file — see the two-/three-file split above).
 
 ## Embeddings
 
 - Embedding model: `openai/text-embedding-3-small` via OpenRouter's embeddings endpoint (`createEmbeddings()` in `app/lib/ai.ts`), using the existing `OPENROUTER_API_KEY`. All embedding calls happen server-side only.
-- Two vector-store tables share this model and dimension: the notes app's `documents` table (`note_id`-scoped, migration `0020`) and Harry's `reviewer_doc_chunks` table (`chat_id`-scoped, `page`-tagged, migration `0021`). Both `embedding` columns are `vector(1536)` — do not change this dimension on either table.
-- Never change the embedding model after initial setup without dropping and re-embedding every row in both tables. Changing the model breaks retrieval silently, and changing it for only one table would leave the two vector stores using incompatible embedding spaces.
+- Two vector-store tables share this model and dimension: the `documents` table (`note_id`-scoped, migration `0020`, feeds Chat's `search_notes` tool) and Harry's `reviewer_doc_chunks` table (`chat_id`-scoped, `page`-tagged, migration `0021`). Both `embedding` columns are `vector(1536)` — do not change this dimension on either table.
+- **Never change the embedding model after initial setup without dropping and re-embedding every row in both tables.** Changing the model breaks retrieval silently, and changing it for only one table would leave the two vector stores using incompatible embedding spaces.
 
 ## Conventions
 - New pages go inside `app/`
@@ -203,9 +172,9 @@ Server-side session checks use **`supabase.auth.getUser()`** — not `getSession
 - Do not put secrets or API keys in source files — use `.env.local`
 - Before building a new feature, ask clarifying questions first to align on scope
 - Keep all styling within the existing Tailwind CSS + CSS custom-property design system — no new UI libraries
-- When adding a new feature that touches data: (1) update the interface in `documents.ts` or `db.ts` (whichever app), (2) add the migration SQL in `supabase/migrations/`, (3) add the function in that same module, (4) wire up the UI last
-- New RLS policies: cover select **and** insert **and** update **and** delete together — every table in this project that shipped with only a select policy needed a follow-up migration once insert was attempted. For a user-owned table, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy does this in one statement; don't add anon access unless it's a narrow, explicit, documented exception (see Notes app schema)
-- Security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`) are set in `next.config.ts`'s `headers()` function — don't duplicate them in `vercel.json` or a route handler. `script-src`/`style-src` include `'unsafe-inline'` deliberately (Next.js's own inline hydration scripts, and this project's inline `style={{ var(--x) }}` design system) — `frame-ancestors 'none'` plus `X-Frame-Options: DENY` are what actually stop clickjacking. If the app ever gains a new external domain dependency (fonts, images, APIs), it needs to be added to the relevant CSP directive there or it will be silently blocked
+- New RLS policies: cover select **and** insert **and** update **and** delete together. For a user-owned table, one `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)` policy does this in one statement; don't add anon access unless it's a narrow, explicit, documented exception — and prefer a `SECURITY DEFINER` RPC over a direct anon `SELECT` policy whenever the exception needs to be scoped by a caller-supplied value (a token, not just a boolean "is this shared at all") — see the Harry sharing schema above for exactly why a naive anon policy is not safe here.
+- Any RPC function: set `search_path` explicitly (`set search_path = public` or `public, extensions`) — an RPC that omits this failed to push once already in this project's history.
+- Security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`) are set in `next.config.ts`'s `headers()` function — don't duplicate them in `vercel.json` or a route handler.
 
 ## Design system
 
@@ -213,85 +182,46 @@ All colours are CSS custom properties defined in `app/globals.css`. `:root` hold
 
 Key tokens: `--bg-app`, `--bg-sidebar`, `--bg-active`, `--bg-hover`, `--bg-input`, `--bg-modal`, `--border`, `--border-focus`, `--text-1`, `--text-2`, `--text-3`, `--accent`, `--active-bar`, `--tag-bg`, `--tag-text`, `--tag-border`, `--shadow-modal`.
 
-## Features already implemented
+## Features already implemented (Sprint 3)
 
 Do not re-implement these. Check the relevant component before adding anything adjacent.
-
-| Feature | Location |
-|---|---|
-| Create / edit / delete documents, auto-save | `app/docs/[id]/page.tsx`, `app/lib/documents.ts` |
-| Sidebar with live search | `app/components/Sidebar.tsx` |
-| Markdown preview (inline parser, no library) | `app/docs/[id]/page.tsx` — `parseMarkdown()` |
-| Starred documents (pinned to top) | `toggleStar()` in `documents.ts`; star button in `Sidebar.tsx` |
-| Dark / light theme toggle, FOUC prevention | `Sidebar.tsx` — `toggleTheme()`; `app/layout.tsx` — `Script` |
-| Live word count | `app/docs/[id]/page.tsx` — `wordCount()` |
-| Tags — add, remove, multi-select filter | `updateDocumentTags()` in `documents.ts`; tag UI in `page.tsx` and `Sidebar.tsx` |
-| Export / import workspace (JSON) | `exportWorkspace()` / `importWorkspace()` in `documents.ts` |
-| Document history — snapshot, preview, restore | `saveSnapshot()` in `documents.ts`; history panel in `page.tsx` |
-| Soft delete / trash (collapsible, default collapsed) | `deleteDocument()` / `restoreDocument()` / `emptyTrash()` in `documents.ts` |
-| Command palette — Ctrl+K, fuzzy search | `app/components/CommandPalette.tsx` |
-| Folder structure — drag-and-drop, create, delete | `getFolders()` / `createFolder()` / `deleteFolder()` in `documents.ts`; folder UI in `Sidebar.tsx` |
-
-### Notes app (`/notes`)
-
-| Feature | Location |
-|---|---|
-| Note create / edit / delete, autosave | `NoteEditor.tsx`, `NotesSidebar.tsx`; `createNote()` / `updateNote()` / `deleteNote()` in `db.ts` |
-| Collections — create, rename, drag-to-reorder, delete-free grouping | `createCollection()` / `renameCollection()` / `reorderCollections()` in `db.ts`; group UI in `NotesSidebar.tsx` |
-| Tags — add/remove on a note, colour-coded, multi-select filter | `setNoteTags()` in `db.ts` (case-insensitive get-or-create); filter UI in `NotesSidebar.tsx` |
-| Move a note between collections (drag-and-drop) | `setNoteCollection()` in `db.ts`; drop handling in `NotesSidebar.tsx` |
-| Pinned notes (float to top of their collection) | `setNotePinned()` in `db.ts`; pin button in `NotesSidebar.tsx` |
-| Archive / unarchive (soft hide, not delete) | `archiveNote()` / `unarchiveNote()` in `db.ts`; collapsible Archive section in `NotesSidebar.tsx` |
-| Server-side full-text search (prefix matching) | `searchNotes()` in `db.ts` against `notes.search_vector` |
-| Export a note as Markdown | `handleExportMarkdown()` in `NoteEditor.tsx` — client-side Blob download, no server round-trip |
-| Loading skeleton while notes fetch | `NotesSidebar.tsx` — pulsing placeholder rows instead of a blank/plain-text loading state |
-| Search history (last 5, upsert + prune) | `getSearchHistory()` / `recordSearch()` in `db.ts` |
-| Collection sharing via read-only link | `generateShareLink()` / `revokeShareLink()` / `getSharedCollection()` in `db.ts`; `app/shared/[token]/page.tsx`; the one narrow anon-read exception in an otherwise fully user-scoped schema |
-| Dark / light theme toggle | `NotesSidebar.tsx` — `toggleTheme()` (same `localStorage.theme` mechanism as the doc-manager) |
-| One image per note via Supabase Storage (not base64), visible in shared links too | `uploadNoteImage()` / `removeNoteImage()` / `getNoteImageUrl()` in `db.ts`; upload/preview UI in `NoteEditor.tsx`; display in `SharedCollectionView.tsx`; private `note-images` bucket, see Note images above |
 
 ### Personal Journal app (`/journal`)
 
 | Feature | Location |
 |---|---|
 | Entry create / edit / delete, autosave | `JournalEditor.tsx`, `JournalSidebar.tsx`; `createEntry()` (via `getOrCreateTodayEntry()`) / `updateEntry()` / `deleteEntry()` in `journal.ts` |
-| One entry per calendar day per user | `unique (user_id, entry_date)` constraint (`0015_journal_entries_table.sql`); `getOrCreateTodayEntry()` in `journal.ts` opens today's entry if it exists instead of creating a duplicate |
+| One entry per calendar day per user | `unique (user_id, entry_date)` constraint; `getOrCreateTodayEntry()` opens today's entry if it exists instead of creating a duplicate |
 | Server-side full-text search | `searchEntries()` in `journal.ts` against `journal_entries.search_vector` |
-| One image per entry via Supabase Storage (not base64) | `uploadEntryImage()` / `removeEntryImage()` / `getEntryImageUrl()` in `journal.ts`; upload/preview UI in `JournalEditor.tsx`; private `journal-images` bucket, see Journal images above |
-| Dark / light theme toggle | `JournalSidebar.tsx` — `toggleTheme()` (same `localStorage.theme` mechanism as notes/doc-manager) |
-| Delete-confirmation dialog | `JournalSidebar.tsx` — `confirmingDeleteId` state; built test-first, see `docs/REFLECTION-journal.md`'s TDD section and `e2e/journal-delete-confirmation.spec.ts` |
+| One image per entry via Supabase Storage | `uploadEntryImage()` / `removeEntryImage()` / `getEntryImageUrl()` in `journal.ts`; private `journal-images` bucket |
+| Delete-confirmation dialog | `JournalSidebar.tsx` — `confirmingDeleteId` state |
 
-### Sprint 3.6 - Chat app (`/chat`)
-
-| Feature | Location |
-|---|---|
-| Send a message, get an AI reply, full conversational memory | `ChatView.tsx`; `sendMessage()` in `chat-actions.ts` (server-only, replays full history to OpenRouter via `app/lib/ai.ts` on every turn) |
-| Persistent single conversation per user, loaded on mount | `getMessages()` in `chat.ts`; `chat_messages` table, see Chat app schema above |
-| Optimistic send with idempotent merge on the real response | `handleSend()` in `ChatView.tsx` — appends a temp message immediately, then reconciles by `id` via a `Map`-keyed merge (guards against a client-side duplicate-render race found during testing) |
-| e2e smoke test proving memory works end to end | `e2e/chat.spec.ts` — signs in, sends a fact, asks a follow-up, asserts the reply reflects it; makes real OpenRouter calls, not run in CI |
-| Model-driven note search via a tool call, with citation | `search_notes` tool defined in `chat-actions.ts` (native OpenRouter tool-calling, bounded `MAX_TOOL_ROUNDS` loop); implemented by `searchNoteChunks()` in `embeddings-actions.ts` (embeds the model's query, calls `match_documents` scoped by `p_user_id`) — the model decides whether to call it, and can rewrite the query and search again if results look weak |
-| e2e test proving note citation, honest "not found", and tool-skip for general questions | `e2e/chat-notes-rag.spec.ts` — seeds a note with a secret fact, asks about it and asserts the reply cites the note; asks an unrelated note-shaped question and asserts an honest non-match reply; asks a general-knowledge question and asserts it's still answered directly |
-
-### Sprint 3.8 - Intelligent Doc Reviewer app (`/harry`)
+### Chat app (`/chat`)
 
 | Feature | Location |
 |---|---|
-| Multiple named chats per user, each scoped to one uploaded PDF | `HarrySidebar.tsx`; `createChat()` / `renameChat()` / `deleteChat()` in `harry-actions.ts`; `reviewer_chats` table, see schema above |
-| PDF upload → parse → chunk → embed pipeline, with page/size caps and scanned-PDF rejection | `createChat()` in `harry-actions.ts`; `ingestDocument()` in `harry-ingest.ts` (`pdfjs-dist`, 100-page/20MB caps, rejects PDFs with no extractable text) |
-| Mandatory, automatic retrieval-grounded answers (no model-chosen skip, unlike `/chat`'s `search_notes`) | `sendMessage()` in `harry-actions.ts`; `match_reviewer_chunks` RPC, scoped by both `p_user_id` and `p_chat_id` |
-| Per-claim page citation and self-rated confidence, rendered as inline badges | `[p. N; confidence: High\|Medium\|Low]` markers in the system prompt (`harry-actions.ts`); parsed by `parseHarryClaims()` in `harry.ts`; rendered by `AssistantContent` in `HarryChatView.tsx` |
-| Hidden self-validation pass — a second model call checks the draft against the retrieved pages before anything is shown or persisted | `sendMessage()` in `harry-actions.ts`; only the validated answer is ever inserted into `reviewer_messages` |
-| Full per-chat conversational memory | `sendMessage()` replays `reviewer_messages` filtered by `chat_id` on every turn, same full-history-replay mechanism as `/chat` |
-| Rename / delete a chat, with Storage + cascade cleanup | `renameChat()` / `deleteChat()` in `harry-actions.ts`; delete removes the Storage object before the row, `on delete cascade` handles `reviewer_messages`/`reviewer_doc_chunks` |
-| e2e coverage: grounded citation, honest refusal for out-of-scope questions, chat management | `e2e/harry.spec.ts` — uploads a real test PDF, asserts a page-cited answer, asserts an honest "not addressed" reply for an uncovered question, renames and deletes a chat; makes real OpenRouter calls, not run in CI |
+| Send a message, get a streamed AI reply, full conversational memory | `ChatView.tsx`; `POST /api/chat` (`app/api/chat/route.ts`, hand-rolled SSE) |
+| Persistent single conversation per user, loaded on mount | `getMessages()` in `chat.ts`; `chat_messages` table |
+| Model-driven note search via a tool call, with citation and similarity bands | `search_notes` tool in `chat-shared.ts`/`chat-actions.ts`; `searchNoteChunks()` in `embeddings-actions.ts`; `similarityBand()` helper labels results "strong"/"moderate"/"weak" match |
+| Per-user model choice | `ModelSelector.tsx`, `settings.ts`, `CHAT_ALLOWED_MODELS` in `ai.ts` |
+| Model + token-usage display | `chat_messages.model`/`total_tokens`, rendered under each assistant reply in `ChatView.tsx` |
+| Multimodal image input | `chat_messages.image_path`, `chat-images` bucket, `ContentPart`/`ChatMessage` union in `ai.ts` |
+| e2e coverage: memory, note citation, honest "not found", tool-skip for general questions, signed-out lockout | `e2e/chat.spec.ts`, `e2e/chat-notes-rag.spec.ts` |
 
-### Authentication (`/workspace`)
+### Harry, the Intelligent Doc Reviewer (`/harry`)
 
 | Feature | Location |
 |---|---|
-| Email/password sign-up, sign-in, sign-out | `app/lib/auth.ts`; `app/login/page.tsx`, `app/signup/page.tsx` |
-| Google / GitHub sign-in (OAuth/PKCE) | `signInWithGoogleAction()` / `signInWithGitHubAction()` in `auth.ts`; both share the same provider-agnostic `app/auth/callback/route.ts` |
-| Password reset via email | `requestPasswordResetAction()` / `updatePasswordAction()` in `auth.ts`; `app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/auth/confirm/route.ts` (`verifyOtp()` with `token_hash`+`type` — the current documented pattern for email-link verification, distinct from the OAuth `code` exchange `/auth/callback` uses) |
-| Session refresh on every request | `app/lib/supabase/middleware.ts`, wired up in root `proxy.ts` |
-| Server-side route protection for `/workspace`, `/notes`, `/journal`, `/chat`, and `/harry` | `app/workspace/layout.tsx` / `app/notes/layout.tsx` / `app/journal/layout.tsx` / `app/chat/layout.tsx` / `app/harry/layout.tsx` — each checks `getUser()`, redirects to `/login`; the proxy (`app/lib/supabase/middleware.ts`) checks all five path prefixes too, as a first line of defense |
-| Profile photo (one per user, shown on `/workspace`) | `uploadProfilePhoto()` / `removeProfilePhoto()` / `getProfilePhotoUrl()` in `app/lib/profile.ts`; `ProfilePhoto.tsx`; private `profile-photos` bucket, see Profile photos above |
+| Multiple named chats per user, each scoped to one uploaded PDF | `HarrySidebar.tsx`; `createChat()` / `renameChat()` / `deleteChat()` in `harry-actions.ts` |
+| PDF upload → parse → chunk → embed pipeline | `createChat()` in `harry-actions.ts`; `ingestDocument()` in `harry-ingest.ts` |
+| Mandatory, automatic retrieval-grounded answers | `sendMessage()` in `harry-actions.ts`; `match_reviewer_chunks` RPC |
+| Per-claim page citation and self-rated confidence, rendered as inline badges | `[p. N; confidence: High\|Medium\|Low]` markers; `parseHarryClaims()` in `harry.ts`; `AssistantContent` in `HarryChatView.tsx` |
+| Hidden self-validation pass | `sendMessage()` in `harry-actions.ts`; only the validated answer is ever persisted |
+| Tuned persona distinguishing document claims from conversation recall | `HARRY_SYSTEM_PROMPT` in `harry-actions.ts` |
+| Per-user model choice, including a free ($0) option | `ModelSelector.tsx`, `HARRY_ALLOWED_MODELS` in `ai.ts` |
+| Multimodal image input (both draft and hidden validation see it; retrieval stays text-only) | `reviewer_messages.image_path`, `reviewer-images` bucket, `harry-actions.ts`'s `sendMessage()` |
+| Shareable, read-only, text-only answer links | `createShare()`/`revokeShare()`/`getSharedMessage()` in `harry.ts`; `get_shared_reviewer_message` RPC; `app/harry-shared/[token]/page.tsx` |
+| Live Vercel deployment | `https://temp-app-weld.vercel.app` — deployed via `vercel --prod` (auto-deploy-on-push is off, see `vercel.json`) |
+| e2e coverage: grounded citation, honest refusal, chat management, signed-out lockout | `e2e/harry.spec.ts` |
+
+**Security note carried forward from this sprint's own final review:** the `reviewer_shares`/`get_shared_reviewer_message` design above (migration `0027`) exists specifically because the first version of this feature (migration `0026`) shipped a real anon-enumeration vulnerability, found and fixed the same day it landed. Any future sharing-style feature in this repo should be modeled on the RPC pattern, not the naive policy that preceded it.
