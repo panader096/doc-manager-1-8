@@ -97,3 +97,48 @@ export function parseHarryClaims(content: string): HarryClaim[] {
   if (rest) claims.push({ text: rest, page: null, confidence: null })
   return claims
 }
+
+export interface SharedReviewerMessage {
+  content: string
+  created_at: string
+}
+
+export async function createShare(messageId: number): Promise<string> {
+  const supabase = createClient()
+  const existing = await getShareToken(messageId)
+  if (existing) return existing
+
+  const token = crypto.randomUUID()
+  const { error } = await supabase.from('reviewer_shares').insert({ message_id: messageId, share_token: token })
+  if (error) throw error
+  return token
+}
+
+export async function revokeShare(messageId: number): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase.from('reviewer_shares').delete().eq('message_id', messageId)
+  if (error) throw error
+}
+
+export async function getShareToken(messageId: number): Promise<string | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('reviewer_shares')
+    .select('share_token')
+    .eq('message_id', messageId)
+    .maybeSingle()
+  if (error) throw error
+  return data?.share_token ?? null
+}
+
+export async function getSharedMessage(token: string): Promise<SharedReviewerMessage | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('reviewer_shares')
+    .select('reviewer_messages(content, created_at)')
+    .eq('share_token', token)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  return data.reviewer_messages as unknown as SharedReviewerMessage
+}

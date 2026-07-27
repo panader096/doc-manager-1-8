@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { getChat, getMessages, getReviewerImageUrl, parseHarryClaims, type ReviewerChat, type ReviewerMessage } from '../lib/harry'
+import { createShare, getChat, getMessages, getReviewerImageUrl, parseHarryClaims, revokeShare, type ReviewerChat, type ReviewerMessage } from '../lib/harry'
 import { sendMessage } from '../lib/harry-actions'
 import ModelSelector from './ModelSelector'
 
@@ -48,6 +48,8 @@ export default function HarryChatView({ chatId }: { chatId: number }) {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [shareLinks, setShareLinks] = useState<Record<number, string>>({})
+  const [sharingId, setSharingId] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -145,6 +147,27 @@ export default function HarryChatView({ chatId }: { chatId: number }) {
     }
   }
 
+  async function handleShare(messageId: number) {
+    setSharingId(messageId)
+    try {
+      const token = await createShare(messageId)
+      setShareLinks(prev => ({ ...prev, [messageId]: `${window.location.origin}/harry-shared/${token}` }))
+    } catch {
+      setError("Couldn't create the share link — try again")
+    } finally {
+      setSharingId(null)
+    }
+  }
+
+  async function handleRevoke(messageId: number) {
+    await revokeShare(messageId)
+    setShareLinks(prev => {
+      const next = { ...prev }
+      delete next[messageId]
+      return next
+    })
+  }
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -207,6 +230,27 @@ export default function HarryChatView({ chatId }: { chatId: number }) {
                   <p className="text-[10px] mt-1 opacity-60">
                     {message.model}{message.total_tokens != null ? ` · ${message.total_tokens} tokens` : ''}
                   </p>
+                )}
+                {message.role === 'assistant' && (
+                  shareLinks[message.id] ? (
+                    <div className="flex items-center gap-1 mt-1">
+                      <input
+                        readOnly
+                        value={shareLinks[message.id]}
+                        onClick={e => (e.target as HTMLInputElement).select()}
+                        className="text-[10px] flex-1 bg-transparent outline-none opacity-70"
+                      />
+                      <button onClick={() => handleRevoke(message.id)} className="text-[10px] opacity-60 hover:opacity-100">Revoke</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleShare(message.id)}
+                      disabled={sharingId === message.id}
+                      className="text-[10px] mt-1 opacity-60 hover:opacity-100 disabled:opacity-30"
+                    >
+                      {sharingId === message.id ? 'Sharing…' : 'Share'}
+                    </button>
+                  )
                 )}
               </div>
             </div>

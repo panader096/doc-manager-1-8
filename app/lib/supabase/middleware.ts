@@ -27,7 +27,12 @@ export async function updateSession(request: NextRequest) {
     || request.nextUrl.pathname.startsWith('/notes')
     || request.nextUrl.pathname.startsWith('/journal')
     || request.nextUrl.pathname.startsWith('/chat')
-    || request.nextUrl.pathname.startsWith('/harry')
+    // Segment-bound, not a plain prefix: a plain startsWith('/harry') also
+    // matches /harry-shared/[token], which must stay public (anon-readable
+    // share links, same exemption as /shared/[token]) -- a plain prefix
+    // check would silently redirect anonymous visitors to /login.
+    || request.nextUrl.pathname === '/harry'
+    || request.nextUrl.pathname.startsWith('/harry/')
 
   if (!user && isProtectedPath) {
     const url = request.nextUrl.clone()
