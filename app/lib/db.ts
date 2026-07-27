@@ -247,27 +247,50 @@ export async function revokeShareLink(collectionId: number): Promise<void> {
   if (error) throw error
 }
 
+type SharedCollectionRow = { id: number; name: string; created_at: string }
+type SharedNoteRow = { id: number; title: string; body: string; updated_at: string; image_path: string | null }
+
 export async function getSharedCollection(
   token: string,
 ): Promise<{ collection: Collection; notes: NoteListItem[] } | null> {
+  // Goes through get_shared_collection()/get_shared_collection_notes(),
+  // not a direct table query -- the token must be supplied server-side
+  // to get anything back, and share_token is never selectable by anon
+  // at all. See migration 0028.
   const supabase = createClient()
-  const { data: collection, error: collectionError } = await supabase
-    .from('collections')
-    .select(COLLECTION_SELECT)
-    .eq('share_token', token)
-    .maybeSingle()
+  const { data: collectionRows, error: collectionError } = await supabase.rpc('get_shared_collection', {
+    p_token: token,
+  })
   if (collectionError) throw collectionError
-  if (!collection) return null
+  const collectionRow = (collectionRows as SharedCollectionRow[] | null)?.[0]
+  if (!collectionRow) return null
 
-  const { data, error: notesError } = await supabase
-    .from('notes')
-    .select(NOTE_LIST_SELECT)
-    .eq('collection_id', collection.id)
-    .is('archived_at', null)
-    .order('updated_at', { ascending: false })
+  const { data: noteRows, error: notesError } = await supabase.rpc('get_shared_collection_notes', {
+    p_token: token,
+  })
   if (notesError) throw notesError
 
-  return { collection, notes: (data as NoteRow[]).map(mapNoteRow) }
+  const collection: Collection = {
+    id: collectionRow.id,
+    name: collectionRow.name,
+    created_at: collectionRow.created_at,
+    share_token: null, // never returned by the RPC -- kept null defensively
+    position: 0, // not meaningful outside the owner's own sidebar ordering
+  }
+
+  const notes: NoteListItem[] = ((noteRows as SharedNoteRow[] | null) ?? []).map(n => ({
+    id: n.id,
+    title: n.title,
+    body: n.body,
+    updated_at: n.updated_at,
+    collection_id: collectionRow.id,
+    pinned: false,
+    archived_at: null,
+    image_path: n.image_path,
+    tags: [], // shared view never rendered tags -- not fetched anymore, see migration 0028
+  }))
+
+  return { collection, notes }
 }
 
 async function getOrCreateTagId(name: string): Promise<number> {
