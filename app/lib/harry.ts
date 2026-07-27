@@ -133,12 +133,10 @@ export async function getShareToken(messageId: number): Promise<string | null> {
 
 export async function getSharedMessage(token: string): Promise<SharedReviewerMessage | null> {
   const supabase = createClient()
-  const { data, error } = await supabase
-    .from('reviewer_shares')
-    .select('reviewer_messages(content, created_at)')
-    .eq('share_token', token)
-    .maybeSingle()
+  // Goes through get_shared_reviewer_message(), not a direct table query --
+  // the token must be supplied server-side to get anything back, and
+  // share_token is never selectable by anon at all. See migration 0027.
+  const { data, error } = await supabase.rpc('get_shared_reviewer_message', { p_token: token })
   if (error) throw error
-  if (!data) return null
-  return data.reviewer_messages as unknown as SharedReviewerMessage
+  return data?.[0] ?? null
 }

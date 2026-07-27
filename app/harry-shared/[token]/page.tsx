@@ -4,13 +4,11 @@ import { createClient } from '../../lib/supabase/server'
 export default async function SharedHarryMessagePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('reviewer_shares')
-    .select('reviewer_messages(content, created_at)')
-    .eq('share_token', token)
-    .maybeSingle()
-
-  const message = data?.reviewer_messages as unknown as { content: string; created_at: string } | undefined
+  // Goes through get_shared_reviewer_message(), not a direct table query --
+  // the token must be supplied server-side to get anything back, and
+  // share_token is never selectable by anon at all. See migration 0027.
+  const { data } = await supabase.rpc('get_shared_reviewer_message', { p_token: token })
+  const message = data?.[0] as { content: string; created_at: string } | undefined
   if (!message) notFound()
 
   return (
