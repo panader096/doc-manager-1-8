@@ -7,7 +7,7 @@ import { ingestDocument, IngestRejectedError, INGEST_MAX_BYTES } from './harry-i
 import type { ReviewerChat, ReviewerMessage } from './harry'
 
 const CHAT_SELECT = 'id, title, doc_filename, doc_status, doc_status_reason, created_at'
-const MESSAGE_SELECT = 'id, chat_id, role, content, created_at, model, total_tokens'
+const MESSAGE_SELECT = 'id, chat_id, role, content, created_at, model, total_tokens, image_path'
 
 const MATCH_COUNT = 5
 // Same starting defaults as searchNoteChunks() in embeddings-actions.ts --
@@ -127,6 +127,7 @@ export async function createChat(title: string, file: File): Promise<ReviewerCha
 export async function sendMessage(
   chatId: number,
   content: string,
+  imageFile?: File,
 ): Promise<{ userMessage: ReviewerMessage; assistantMessage: ReviewerMessage }> {
   const trimmedContent = content.trim()
   if (!trimmedContent) throw new Error('Message cannot be empty')
@@ -146,9 +147,32 @@ export async function sendMessage(
   if (chatError) throw chatError
   if (chat.doc_status !== 'ready') throw new Error('This chat is not ready yet')
 
+  // An attached image is additional context for this one question, on top
+  // of the chat's mandatory document grounding -- it never replaces or
+  // skips retrieval. Uploaded to its own path (not the doc's) so it's never
+  // confused with the chat's one grounding PDF in `reviewer-docs`.
+  let imagePath: string | null = null
+  let imageSignedUrl: string | null = null
+  if (imageFile) {
+    const ext = imageFile.name.includes('.') ? imageFile.name.split('.').pop() : 'png'
+    const path = `${user.id}/${chatId}/${Date.now()}.${ext}`
+    const buffer = await imageFile.arrayBuffer()
+    const { error: uploadError } = await supabase.storage
+      .from('reviewer-images')
+      .upload(path, buffer, { contentType: imageFile.type })
+    if (uploadError) throw uploadError
+    imagePath = path
+
+    const { data: signed, error: signError } = await supabase.storage.from('reviewer-images').createSignedUrl(path, 300)
+    if (signError) throw signError
+    imageSignedUrl = signed.signedUrl
+  }
+
+  const storedContent = imagePath ? `${trimmedContent}\n\n[Attached image: ${imageFile!.name}]` : trimmedContent
+
   const { data: userMessage, error: insertUserError } = await supabase
     .from('reviewer_messages')
-    .insert({ chat_id: chatId, role: 'user', content: trimmedContent })
+    .insert({ chat_id: chatId, role: 'user', content: storedContent, image_path: imagePath })
     .select(MESSAGE_SELECT)
     .single()
   if (insertUserError) throw insertUserError
@@ -160,14 +184,31 @@ export async function sendMessage(
     .order('created_at', { ascending: true })
   if (historyError) throw historyError
 
+  // Retrieval stays text-query-only against the raw question -- the image
+  // doesn't influence which document chunks come back, only what the model
+  // sees once chunks are already selected (below).
   const matches = await searchDocChunks(supabase, user.id, chatId, trimmedContent)
   const contextBlock = matches.length === 0
     ? 'No relevant excerpts were found in the document for this question.'
     : matches.map(m => `(p. ${m.page}) ${m.content}`).join('\n\n')
 
+  // The just-inserted current-turn row is excluded from the mapped prior
+  // history and rebuilt separately below (as `draftCurrentTurn` and, for the
+  // validation call, `validationCurrentTurn`), so this turn's image (if any)
+  // can be sent as real multimodal content instead of the stored text
+  // marker baked into `storedContent` above. Only the current turn's image
+  // is ever sent live -- past turns' images collapse to that stored text
+  // marker once replayed as history, same "only current turn's image" rule
+  // as /chat's image handling.
+  const priorHistory = (history as ReviewerMessage[]).slice(0, -1)
+  const draftCurrentTurn: AiChatMessage = imageSignedUrl
+    ? { role: 'user', content: [{ type: 'text', text: trimmedContent }, { type: 'image_url', image_url: { url: imageSignedUrl } }] }
+    : { role: 'user', content: trimmedContent }
+
   const conversation: AiChatMessage[] = [
     { role: 'system', content: HARRY_SYSTEM_PROMPT },
-    ...(history as ReviewerMessage[]).map(m => ({ role: m.role, content: m.content }) as AiChatMessage),
+    ...priorHistory.map(m => ({ role: m.role, content: m.content }) as AiChatMessage),
+    draftCurrentTurn,
     { role: 'system', content: `Relevant document excerpts for this question:\n\n${contextBlock}` },
   ]
 
@@ -182,12 +223,25 @@ export async function sendMessage(
   // judge a claim that leans on earlier turns (e.g. "repeat what you just
   // told me"), and Harry visibly "forgets" the conversation in its final
   // reply even though the draft itself was generated with full history.
-  const priorHistory = (history as ReviewerMessage[]).slice(0, -1)
+  //
+  // The validator also gets the same image the draft did, when one was
+  // attached -- it's re-checking whatever the draft claimed about it, so it
+  // needs to see it too, not just the draft's text description of it.
+  const validationCurrentTurn: AiChatMessage = imageSignedUrl
+    ? {
+        role: 'user',
+        content: [
+          { type: 'text', text: `Question: ${trimmedContent}\n\nDraft answer to verify:\n${draftContent}` },
+          { type: 'image_url', image_url: { url: imageSignedUrl } },
+        ],
+      }
+    : { role: 'user', content: `Question: ${trimmedContent}\n\nDraft answer to verify:\n${draftContent}` }
+
   const validationConversation: AiChatMessage[] = [
     { role: 'system', content: HARRY_VALIDATION_PROMPT },
     ...priorHistory.map(m => ({ role: m.role, content: m.content }) as AiChatMessage),
     { role: 'system', content: `Document excerpts used for this question:\n\n${contextBlock}` },
-    { role: 'user', content: `Question: ${trimmedContent}\n\nDraft answer to verify:\n${draftContent}` },
+    validationCurrentTurn,
   ]
   const validated = await createChatCompletion(validationConversation, { model })
   const replyContent = validated.content ?? draftContent

@@ -18,6 +18,7 @@ export interface ReviewerMessage {
   created_at: string
   model: string | null
   total_tokens: number | null
+  image_path: string | null
 }
 
 export interface HarryClaim {
@@ -27,7 +28,8 @@ export interface HarryClaim {
 }
 
 const CHAT_SELECT = 'id, title, doc_filename, doc_status, doc_status_reason, created_at'
-const MESSAGE_SELECT = 'id, chat_id, role, content, created_at, model, total_tokens'
+const MESSAGE_SELECT = 'id, chat_id, role, content, created_at, model, total_tokens, image_path'
+const REVIEWER_IMAGES_BUCKET = 'reviewer-images'
 
 export async function getChats(): Promise<ReviewerChat[]> {
   const supabase = createClient()
@@ -59,6 +61,13 @@ export async function getMessages(chatId: number): Promise<ReviewerMessage[]> {
     .order('created_at', { ascending: true })
   if (error) throw error
   return data
+}
+
+export async function getReviewerImageUrl(imagePath: string): Promise<string | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase.storage.from(REVIEWER_IMAGES_BUCKET).createSignedUrl(imagePath, 3600)
+  if (error) return null
+  return data.signedUrl
 }
 
 // Matches the "[p. N; confidence: High|Medium|Low]" marker Harry is
