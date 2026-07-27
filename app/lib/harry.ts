@@ -103,23 +103,11 @@ export interface SharedReviewerMessage {
   created_at: string
 }
 
-export async function createShare(messageId: number): Promise<string> {
-  const supabase = createClient()
-  const existing = await getShareToken(messageId)
-  if (existing) return existing
-
-  const token = crypto.randomUUID()
-  const { error } = await supabase.from('reviewer_shares').insert({ message_id: messageId, share_token: token })
-  if (error) throw error
-  return token
-}
-
-export async function revokeShare(messageId: number): Promise<void> {
-  const supabase = createClient()
-  const { error } = await supabase.from('reviewer_shares').delete().eq('message_id', messageId)
-  if (error) throw error
-}
-
+// createShare()/revokeShare() are mutations -- they live in
+// harry-actions.ts (a 'use server' module) now, not here, so they get an
+// explicit auth + ownership check instead of relying solely on RLS from a
+// client-context call. getShareToken()/getSharedMessage() below are pure
+// reads and stay client-safe.
 export async function getShareToken(messageId: number): Promise<string | null> {
   const supabase = createClient()
   const { data, error } = await supabase

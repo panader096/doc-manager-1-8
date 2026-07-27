@@ -307,3 +307,47 @@ export async function deleteChat(chatId: number): Promise<void> {
   const { error: deleteError } = await supabase.from('reviewer_chats').delete().eq('id', chatId)
   if (deleteError) throw deleteError
 }
+
+// Moved here from harry.ts: these are mutations, and belong in this
+// 'use server' module like every other mutation in this file, with an
+// explicit auth + ownership check -- not left to run client-side relying
+// solely on RLS to catch a misuse. The token is generated server-side too,
+// for the same reason every other server-derived value in this file is
+// (chat_id, user_id, model/usage) rather than trusted from the client.
+export async function createShare(messageId: number): Promise<string> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { data: message, error: messageError } = await supabase
+    .from('reviewer_messages')
+    .select('role')
+    .eq('id', messageId)
+    .single()
+  if (messageError) throw messageError
+  if (message.role !== 'assistant') throw new Error("Only Harry's own replies can be shared")
+
+  const { data: existing, error: existingError } = await supabase
+    .from('reviewer_shares')
+    .select('share_token')
+    .eq('message_id', messageId)
+    .maybeSingle()
+  if (existingError) throw existingError
+  if (existing) return existing.share_token
+
+  const token = crypto.randomUUID()
+  const { error: insertError } = await supabase
+    .from('reviewer_shares')
+    .insert({ message_id: messageId, share_token: token })
+  if (insertError) throw insertError
+  return token
+}
+
+export async function revokeShare(messageId: number): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { error } = await supabase.from('reviewer_shares').delete().eq('message_id', messageId)
+  if (error) throw error
+}
