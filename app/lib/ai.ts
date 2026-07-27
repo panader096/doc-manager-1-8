@@ -23,11 +23,20 @@ export interface ToolDefinition {
   }
 }
 
+// Multimodal content parts for a 'user' message -- text plus an optional
+// image, per OpenRouter's (OpenAI-compatible) vision input shape.
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
 // The message shapes OpenRouter's (OpenAI-compatible) chat completions
 // endpoint accepts -- including the 'assistant' message a tool call arrives
-// in, and the 'tool' message a tool's result is reported back with.
+// in, and the 'tool' message a tool's result is reported back with. 'user'
+// content widens to ContentPart[] for turns that attach an image (3b) --
+// still plain string for every other turn/role.
 export type ChatMessage =
-  | { role: 'system' | 'user'; content: string }
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string | ContentPart[] }
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string }
 

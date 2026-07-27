@@ -6,7 +6,7 @@ import { searchNoteChunks } from './embeddings-actions'
 import { SYSTEM_PROMPT, SEARCH_NOTES_TOOL, MAX_TOOL_ROUNDS } from './chat-shared'
 import type { ChatMessage } from './chat'
 
-const MESSAGE_SELECT = 'id, role, content, created_at, model, total_tokens'
+const MESSAGE_SELECT = 'id, role, content, created_at, model, total_tokens, image_path'
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>
 
@@ -38,6 +38,7 @@ export async function runSearchNotesTool(supabase: ServerSupabase, query: string
 
 export async function sendMessage(
   content: string,
+  imageFile?: File,
 ): Promise<{ userMessage: ChatMessage; assistantMessage: ChatMessage }> {
   const trimmedContent = content.trim()
   if (!trimmedContent) throw new Error('Message cannot be empty')
@@ -49,9 +50,32 @@ export async function sendMessage(
   const { data: settings } = await supabase.from('user_settings').select('chat_model').eq('user_id', user.id).maybeSingle()
   const model = settings?.chat_model
 
+  let imagePath: string | null = null
+  let imageSignedUrl: string | null = null
+  if (imageFile) {
+    const ext = imageFile.name.includes('.') ? imageFile.name.split('.').pop() : 'png'
+    const path = `${user.id}/${Date.now()}.${ext}`
+    const buffer = await imageFile.arrayBuffer()
+    const { error: uploadError } = await supabase.storage
+      .from('chat-images')
+      .upload(path, buffer, { contentType: imageFile.type })
+    if (uploadError) throw uploadError
+    imagePath = path
+
+    const { data: signed, error: signError } = await supabase.storage.from('chat-images').createSignedUrl(path, 300)
+    if (signError) throw signError
+    imageSignedUrl = signed.signedUrl
+  }
+
+  // Past images are never re-sent as real image content on later turns --
+  // only baked into the stored text as a marker, so history replay stays
+  // cheap and simple. Only *this* turn's image (if any) goes to the model
+  // as real multimodal content, built separately below.
+  const storedContent = imagePath ? `${trimmedContent}\n\n[Attached image: ${imageFile!.name}]` : trimmedContent
+
   const { data: userMessage, error: insertUserError } = await supabase
     .from('chat_messages')
-    .insert({ role: 'user', content: trimmedContent })
+    .insert({ role: 'user', content: storedContent, image_path: imagePath })
     .select(MESSAGE_SELECT)
     .single()
   if (insertUserError) throw insertUserError
@@ -65,10 +89,19 @@ export async function sendMessage(
   // Only the stored chat_messages rows (user/assistant turns) feed this --
   // the same full-history replay as before. Tool calls and their results are
   // appended below for this turn's model round-trips only; they're never
-  // persisted, so in-conversation memory behavior is unchanged.
+  // persisted, so in-conversation memory behavior is unchanged. The
+  // just-inserted current-turn row is excluded from the mapped history and
+  // rebuilt separately as `currentTurn` below, so this turn's image (if any)
+  // can be sent as real multimodal content instead of the stored text marker.
+  const priorHistory = (history as ChatMessage[]).slice(0, -1)
+  const currentTurn: AiChatMessage = imageSignedUrl
+    ? { role: 'user', content: [{ type: 'text', text: trimmedContent }, { type: 'image_url', image_url: { url: imageSignedUrl } }] }
+    : { role: 'user', content: trimmedContent }
+
   const conversation: AiChatMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
-    ...(history as ChatMessage[]).map(m => ({ role: m.role, content: m.content }) as AiChatMessage),
+    ...priorHistory.map(m => ({ role: m.role, content: m.content }) as AiChatMessage),
+    currentTurn,
   ]
 
   let finalContent: string | null = null

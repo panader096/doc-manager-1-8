@@ -8,10 +8,23 @@ import { runSearchNotesTool } from '../../lib/chat-actions'
 import { SYSTEM_PROMPT, SEARCH_NOTES_TOOL, MAX_TOOL_ROUNDS } from '../../lib/chat-shared'
 import type { ChatMessage } from '../../lib/chat'
 
-const MESSAGE_SELECT = 'id, role, content, created_at, model, total_tokens'
+const MESSAGE_SELECT = 'id, role, content, created_at, model, total_tokens, image_path'
 
 export async function POST(request: Request) {
-  const { content } = await request.json()
+  const contentType = request.headers.get('content-type') ?? ''
+  let content: string
+  let imageFile: File | undefined
+
+  if (contentType.includes('multipart/form-data')) {
+    const form = await request.formData()
+    content = String(form.get('content') ?? '')
+    const file = form.get('image')
+    if (file instanceof File && file.size > 0) imageFile = file
+  } else {
+    const body = await request.json()
+    content = body.content
+  }
+
   const trimmedContent = typeof content === 'string' ? content.trim() : ''
   if (!trimmedContent) {
     return new Response('Message cannot be empty', { status: 400 })
@@ -26,9 +39,24 @@ export async function POST(request: Request) {
   const { data: settings } = await supabase.from('user_settings').select('chat_model').eq('user_id', user.id).maybeSingle()
   const model = settings?.chat_model
 
+  let imagePath: string | null = null
+  let imageSignedUrl: string | null = null
+  if (imageFile) {
+    const ext = imageFile.name.includes('.') ? imageFile.name.split('.').pop() : 'png'
+    const path = `${user.id}/${Date.now()}.${ext}`
+    const buffer = await imageFile.arrayBuffer()
+    const { error: uploadError } = await supabase.storage.from('chat-images').upload(path, buffer, { contentType: imageFile.type })
+    if (uploadError) return new Response('Failed to upload image', { status: 500 })
+    imagePath = path
+    const { data: signed } = await supabase.storage.from('chat-images').createSignedUrl(path, 300)
+    imageSignedUrl = signed?.signedUrl ?? null
+  }
+
+  const storedContent = imagePath ? `${trimmedContent}\n\n[Attached image: ${imageFile!.name}]` : trimmedContent
+
   const { data: userMessage, error: insertUserError } = await supabase
     .from('chat_messages')
-    .insert({ role: 'user', content: trimmedContent })
+    .insert({ role: 'user', content: storedContent, image_path: imagePath })
     .select(MESSAGE_SELECT)
     .single()
   if (insertUserError) {
@@ -43,9 +71,19 @@ export async function POST(request: Request) {
     return new Response('Failed to load history', { status: 500 })
   }
 
+  // The just-inserted current-turn row is excluded from the mapped prior
+  // history and rebuilt separately as `currentTurn`, so this turn's image
+  // (if any) can be sent as real multimodal content instead of the stored
+  // text marker baked into `storedContent` above.
+  const priorHistory = (history as ChatMessage[]).slice(0, -1)
+  const currentTurn: AiChatMessage = imageSignedUrl
+    ? { role: 'user', content: [{ type: 'text', text: trimmedContent }, { type: 'image_url', image_url: { url: imageSignedUrl } }] }
+    : { role: 'user', content: trimmedContent }
+
   const conversation: AiChatMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
-    ...(history as ChatMessage[]).map(m => ({ role: m.role, content: m.content }) as AiChatMessage),
+    ...priorHistory.map(m => ({ role: m.role, content: m.content }) as AiChatMessage),
+    currentTurn,
   ]
 
   // Resolve any tool rounds first (non-streamed -- fast, and there's nothing

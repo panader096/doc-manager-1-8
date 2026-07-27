@@ -1,17 +1,24 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { getMessages, type ChatMessage } from '../lib/chat'
+import { getMessages, getChatImageUrl, type ChatMessage } from '../lib/chat'
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 
 let nextTempId = -1
 
 export default function ChatView() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [imageUrls, setImageUrls] = useState<Record<number, string>>({})
   const [input, setInput] = useState('')
+  const [pendingImage, setPendingImage] = useState<File | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getMessages()
@@ -35,12 +42,42 @@ export default function ChatView() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages, sending])
 
+  useEffect(() => {
+    const withImages = messages.filter(m => m.image_path && !imageUrls[m.id])
+    if (withImages.length === 0) return
+    Promise.all(withImages.map(async m => [m.id, await getChatImageUrl(m.image_path!)] as const)).then(pairs => {
+      setImageUrls(prev => {
+        const next = { ...prev }
+        for (const [id, url] of pairs) if (url) next[id] = url
+        return next
+      })
+    })
+  }, [messages, imageUrls])
+
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setImageError('Unsupported image type.')
+      return
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImageError('Image must be 5MB or smaller.')
+      return
+    }
+    setImageError(null)
+    setPendingImage(file)
+  }
+
   async function handleSend() {
     const content = input.trim()
     if (!content || sending) return
 
     setError(null)
     setInput('')
+    const attachedImage = pendingImage
+    setPendingImage(null)
     setSending(true)
 
     const optimisticMessage: ChatMessage = {
@@ -50,20 +87,21 @@ export default function ChatView() {
       created_at: new Date().toISOString(),
       model: null,
       total_tokens: null,
+      image_path: null,
     }
     const streamingId = nextTempId--
     setMessages(prev => [
       ...prev,
       optimisticMessage,
-      { id: streamingId, role: 'assistant', content: '', created_at: new Date().toISOString(), model: null, total_tokens: null },
+      { id: streamingId, role: 'assistant', content: '', created_at: new Date().toISOString(), model: null, total_tokens: null, image_path: null },
     ])
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      })
+      const form = new FormData()
+      form.append('content', content)
+      if (attachedImage) form.append('image', attachedImage)
+
+      const response = await fetch('/api/chat', { method: 'POST', body: form })
       if (!response.ok || !response.body) throw new Error('Stream request failed')
 
       const reader = response.body.getReader()
@@ -98,6 +136,7 @@ export default function ChatView() {
     } catch {
       setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id && m.id !== streamingId))
       setInput(content)
+      setPendingImage(attachedImage)
       setError("Couldn't send that — try again")
     } finally {
       setSending(false)
@@ -135,6 +174,9 @@ export default function ChatView() {
                     : { backgroundColor: 'var(--bg-modal)', color: 'var(--text-1)', boxShadow: 'var(--shadow-modal)' }
                 }
               >
+                {message.image_path && imageUrls[message.id] && (
+                  <img src={imageUrls[message.id]} alt="Attached" className="rounded-[8px] max-w-full mb-1" />
+                )}
                 {message.content}
                 {message.role === 'assistant' && message.model && (
                   <p className="text-[10px] mt-1 opacity-60">
@@ -153,7 +195,34 @@ export default function ChatView() {
             {error}
           </p>
         )}
+        {imageError && (
+          <p className="text-[12px] mb-2" style={{ color: 'var(--text-2)' }}>
+            {imageError}
+          </p>
+        )}
+        {pendingImage && (
+          <div className="flex items-center gap-2 mb-2 text-[11px]" style={{ color: 'var(--text-2)' }}>
+            <span>{pendingImage.name}</span>
+            <button onClick={() => setPendingImage(null)} aria-label="Remove attached image" className="opacity-60 hover:opacity-100">×</button>
+          </div>
+        )}
         <div className="flex items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_IMAGE_TYPES.join(',')}
+            onChange={handleImageSelect}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending}
+            className="text-[12px] rounded-[6px] border px-2 py-2 transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-2)' }}
+          >
+            📎
+          </button>
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
