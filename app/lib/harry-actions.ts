@@ -135,6 +135,9 @@ export async function sendMessage(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not signed in')
 
+  const { data: settings } = await supabase.from('user_settings').select('harry_model').eq('user_id', user.id).maybeSingle()
+  const model = settings?.harry_model
+
   const { data: chat, error: chatError } = await supabase
     .from('reviewer_chats')
     .select('doc_status')
@@ -168,7 +171,7 @@ export async function sendMessage(
     { role: 'system', content: `Relevant document excerpts for this question:\n\n${contextBlock}` },
   ]
 
-  const draft = await createChatCompletion(conversation)
+  const draft = await createChatCompletion(conversation, { model })
   const draftContent = draft.content ?? "I wasn't able to come up with an answer — could you rephrase your question?"
 
   // Include the same conversation history the draft call saw (minus its own
@@ -186,7 +189,7 @@ export async function sendMessage(
     { role: 'system', content: `Document excerpts used for this question:\n\n${contextBlock}` },
     { role: 'user', content: `Question: ${trimmedContent}\n\nDraft answer to verify:\n${draftContent}` },
   ]
-  const validated = await createChatCompletion(validationConversation)
+  const validated = await createChatCompletion(validationConversation, { model })
   const replyContent = validated.content ?? draftContent
 
   const { data: assistantMessage, error: insertAssistantError } = await supabase

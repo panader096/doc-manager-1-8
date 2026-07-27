@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getChat, getMessages, parseHarryClaims, type ReviewerChat, type ReviewerMessage } from '../lib/harry'
 import { sendMessage } from '../lib/harry-actions'
+import ModelSelector from './ModelSelector'
 
 let nextTempId = -1
 
@@ -125,9 +126,12 @@ export default function HarryChatView({ chatId }: { chatId: number }) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-6 py-3 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-        <p className="text-[13px] font-semibold" style={{ color: 'var(--text-1)' }}>{chat.title}</p>
-        <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>{chat.doc_filename}</p>
+      <div className="px-6 py-3 flex-shrink-0 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div>
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text-1)' }}>{chat.title}</p>
+          <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>{chat.doc_filename}</p>
+        </div>
+        <ModelSelector app="harry" />
       </div>
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-3">

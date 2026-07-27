@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '../lib/supabase/server'
 import { signOutAction } from '../lib/auth'
+import ModelSelector from '../components/ModelSelector'
 
 export default async function ChatLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -25,6 +26,7 @@ export default async function ChatLayout({ children }: { children: React.ReactNo
           ← Workspace
         </Link>
         <div className="flex items-center gap-3">
+          <ModelSelector app="chat" />
           <span className="text-[13px]" style={{ color: 'var(--text-2)' }}>
             {user.email}
           </span>

@@ -37,6 +37,9 @@ export async function sendMessage(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not signed in')
 
+  const { data: settings } = await supabase.from('user_settings').select('chat_model').eq('user_id', user.id).maybeSingle()
+  const model = settings?.chat_model
+
   const { data: userMessage, error: insertUserError } = await supabase
     .from('chat_messages')
     .insert({ role: 'user', content: trimmedContent })
@@ -66,7 +69,7 @@ export async function sendMessage(
     const isLastRound = round === MAX_TOOL_ROUNDS - 1
     const assistantTurn = await createChatCompletion(
       conversation,
-      isLastRound ? {} : { tools: [SEARCH_NOTES_TOOL] },
+      isLastRound ? { model } : { model, tools: [SEARCH_NOTES_TOOL] },
     )
 
     if (assistantTurn.tool_calls && assistantTurn.tool_calls.length > 0) {

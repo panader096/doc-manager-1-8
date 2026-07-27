@@ -23,6 +23,9 @@ export async function POST(request: Request) {
     return new Response('Not signed in', { status: 401 })
   }
 
+  const { data: settings } = await supabase.from('user_settings').select('chat_model').eq('user_id', user.id).maybeSingle()
+  const model = settings?.chat_model
+
   const { data: userMessage, error: insertUserError } = await supabase
     .from('chat_messages')
     .insert({ role: 'user', content: trimmedContent })
@@ -60,7 +63,7 @@ export async function POST(request: Request) {
   let plainModel: string | null = null
   let plainTotalTokens: number | null = null
   while (round < MAX_TOOL_ROUNDS - 1) {
-    const assistantTurn = await createChatCompletion(conversation, { tools: [SEARCH_NOTES_TOOL] })
+    const assistantTurn = await createChatCompletion(conversation, { model, tools: [SEARCH_NOTES_TOOL] })
     if (!assistantTurn.tool_calls || assistantTurn.tool_calls.length === 0) {
       gotPlainRound = true
       plainContent = assistantTurn.content
@@ -128,7 +131,7 @@ export async function POST(request: Request) {
     // Fallback: every round through MAX_TOOL_ROUNDS - 1 came back with a
     // tool call, so there's no already-generated plain answer to reuse --
     // make one genuine, live streaming call for the final answer.
-    const upstream = await createChatCompletionStream(conversation)
+    const upstream = await createChatCompletionStream(conversation, { model })
     const reader = upstream.getReader()
     const decoder = new TextDecoder()
     let sseBuffer = ''
