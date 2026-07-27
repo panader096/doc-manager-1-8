@@ -122,3 +122,20 @@ test('3. management: rename and delete a chat', async ({ page }) => {
   const { data } = await supabase.from('reviewer_chats').select('id').eq('id', chatId)
   expect(data).toHaveLength(0)
 })
+
+test('signed-out visitor is redirected to /login, not shown any Harry data', async ({ page, context }) => {
+  await context.clearCookies()
+
+  await page.goto('/harry')
+  await page.waitForURL('/login')
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '+ New chat' })).not.toBeVisible()
+})
+
+test('signed-out visitor hitting a specific chat URL is also redirected, not shown its content', async ({ page, context }) => {
+  await context.clearCookies()
+
+  await page.goto('/harry/1')
+  await page.waitForURL('/login')
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+})

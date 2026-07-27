@@ -102,3 +102,15 @@ test('persistence: messages survive a page refresh', async ({ page }) => {
   await expect(page.getByText(firstMessage)).toBeVisible({ timeout: 15000 })
   await expect(page.getByText(secondMessage)).toBeVisible()
 })
+
+test('signed-out visitor is redirected to /login, not shown any chat data', async ({ page, context }) => {
+  // Fresh, cookie-less context -- no prior sign-in from this file's other
+  // tests leaks in, since Playwright's default context is already isolated
+  // per test, but being explicit here documents the intent.
+  await context.clearCookies()
+
+  await page.goto('/chat')
+  await page.waitForURL('/login')
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+  await expect(page.getByPlaceholder('Type a message…')).not.toBeVisible()
+})
