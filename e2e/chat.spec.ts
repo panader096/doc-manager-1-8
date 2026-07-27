@@ -14,14 +14,27 @@ test('sends a message and receives a reply that remembers context', async ({ pag
 
   await page.goto('/chat')
 
-  await page.getByPlaceholder('Type a message…').fill('My favorite color is teal.')
-  await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByText('My favorite color is teal.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
+  // Unique marker per run, mirroring the multi-turn test below -- this is a
+  // persistent, ever-growing conversation shared across every run of this
+  // suite, so a fixed message string collides with an earlier run's copy
+  // once this test has run more than once and breaks a strict-mode
+  // getByText lookup (more than one element with the exact same text).
+  const marker = Date.now()
+  const firstMessage = `My favorite color is teal. (ref ${marker})`
 
-  await page.getByPlaceholder('Type a message…').fill("What's my favorite color?")
+  await page.getByPlaceholder('Type a message…').fill(firstMessage)
   await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
+  // Explicit timeout (matching the toBeEnabled waits below): the very first
+  // /chat load of a test run can be slow to render -- Next.js dev-server
+  // first-hit compilation plus the initial getMessages() fetch over this
+  // account's one, ever-growing shared conversation -- so the default 5s
+  // isn't always enough for the optimistic message to appear on screen.
+  await expect(page.getByText(firstMessage)).toBeVisible({ timeout: 15000 })
+  await expect(page.getByPlaceholder('Type a message…')).toBeEnabled({ timeout: 15000 })
+
+  await page.getByPlaceholder('Type a message…').fill(`What's my favorite color? (ref ${marker})`)
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByPlaceholder('Type a message…')).toBeEnabled({ timeout: 15000 })
 
   const lastMessage = page.locator('main div.whitespace-pre-wrap').last()
   await expect(lastMessage).toContainText(/teal/i)
@@ -45,12 +58,12 @@ test('multi-turn conversation: a follow-up reply reflects the earlier turn, not 
 
   await page.getByPlaceholder('Type a message…').fill(firstMessage)
   await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByText(firstMessage)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
+  await expect(page.getByText(firstMessage)).toBeVisible({ timeout: 15000 })
+  await expect(page.getByPlaceholder('Type a message…')).toBeEnabled({ timeout: 15000 })
 
   await page.getByPlaceholder('Type a message…').fill(followupMessage)
   await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
+  await expect(page.getByPlaceholder('Type a message…')).toBeEnabled({ timeout: 15000 })
 
   const lastMessage = page.locator('main div.whitespace-pre-wrap').last()
   // A reply that actually remembers the earlier turn re-explains the same
@@ -75,17 +88,17 @@ test('persistence: messages survive a page refresh', async ({ page }) => {
 
   await page.getByPlaceholder('Type a message…').fill(firstMessage)
   await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByText(firstMessage)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
+  await expect(page.getByText(firstMessage)).toBeVisible({ timeout: 15000 })
+  await expect(page.getByPlaceholder('Type a message…')).toBeEnabled({ timeout: 15000 })
 
   await page.getByPlaceholder('Type a message…').fill(secondMessage)
   await page.getByRole('button', { name: 'Send' }).click()
-  await expect(page.getByText(secondMessage)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 15000 })
+  await expect(page.getByText(secondMessage)).toBeVisible({ timeout: 15000 })
+  await expect(page.getByPlaceholder('Type a message…')).toBeEnabled({ timeout: 15000 })
 
   await page.reload()
 
   await expect(page.getByText('Loading…')).not.toBeVisible({ timeout: 15000 })
-  await expect(page.getByText(firstMessage)).toBeVisible()
+  await expect(page.getByText(firstMessage)).toBeVisible({ timeout: 15000 })
   await expect(page.getByText(secondMessage)).toBeVisible()
 })

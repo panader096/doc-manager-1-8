@@ -15,7 +15,18 @@ export default function ChatView() {
 
   useEffect(() => {
     getMessages()
-      .then(data => setMessages(data))
+      .then(data => {
+        // A send can fire (and optimistically append temp messages, all with
+        // negative ids) before this initial load resolves. A bare replace
+        // here would silently wipe those out from under an in-flight send --
+        // so merge instead: keep any still-pending optimistic/temp messages
+        // and layer the freshly loaded history underneath them.
+        setMessages(prev => {
+          const pending = prev.filter(m => m.id < 0)
+          if (pending.length === 0) return data
+          return [...data, ...pending].sort((a, b) => a.created_at.localeCompare(b.created_at))
+        })
+      })
       .catch(() => setError("Couldn't load the conversation — try refreshing"))
       .finally(() => setLoading(false))
   }, [])
@@ -149,7 +160,8 @@ export default function ChatView() {
             onKeyDown={handleKeyDown}
             placeholder="Type a message…"
             rows={1}
-            className="flex-1 resize-none rounded-[8px] border px-3 py-2 text-[13px] outline-none"
+            disabled={sending}
+            className="flex-1 resize-none rounded-[8px] border px-3 py-2 text-[13px] outline-none disabled:opacity-50"
             style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-1)' }}
           />
           <button
