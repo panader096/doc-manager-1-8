@@ -1,6 +1,7 @@
 // app/lib/harry-ingest.ts
 // Server-only PDF parse/chunk/embed pipeline for Harry. Never import
 // from a 'use client' file -- only harry-actions.ts calls this.
+import './harry-pdfjs-polyfill'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
